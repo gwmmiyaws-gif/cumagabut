@@ -1,22 +1,28 @@
--- ==================== FISH IT WEBHOOK WITH FULL UI (MOBILE FRIENDLY) ====================
--- UI lengkap dengan Start, Stop, Copy Log, dan Live Error Detection
+-- ==================== FISH IT WEBHOOK BY RADITYA ====================
+-- UI Lengkap: Minimize, URL Input, Toggle, Live Log, Copy, Error Detection
+-- Made for Mobile/Android Support
 
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
 
--- ==================== KONFIGURASI ====================
-local WEBHOOK_URL = "https://discord.com/api/webhooks/1446677688453566655/Xo6u363NGUlSmxhtfAyjXqw8U9fRkfZ8kdSuDxUf82sDBywgcJkEj3XYngSaKFFWu8Hp"
+print("=" .. string.rep("=", 50))
+print("🎣 Webhook By Raditya Loaded!")
+print("=" .. string.rep("=", 50))
 
--- Variables
+-- ==================== VARIABLES ====================
 local isRunning = false
+local isMinimized = false
 local connections = {}
 local fullLog = ""
 local imageCache = {}
 local fishDataCache = {}
 local totalFishCaught = 0
 local successfulWebhooks = 0
+local errorCount = 0
+
+local WEBHOOK_URL = ""
 
 -- ==================== FUNGSI GAMBAR ====================
 local function GetRobloxImage(assetId)
@@ -24,14 +30,19 @@ local function GetRobloxImage(assetId)
         return imageCache[assetId]
     end
     
+    -- Gunakan request biasa tanpa game:HttpGet untuk bypass executor protection
     local url = "https://thumbnails.roblox.com/v1/assets?assetIds=" .. assetId .. "&size=420x420&format=Png&isCircular=false"
+    
     local success, response = pcall(function()
-        return game:HttpGet(url)
+        return request({
+            Url = url,
+            Method = "GET"
+        })
     end)
     
-    if success then
+    if success and response and response.Body then
         local decodeSuccess, data = pcall(function()
-            return HttpService:JSONDecode(response)
+            return HttpService:JSONDecode(response.Body)
         end)
         
         if decodeSuccess and data and data.data and data.data[1] and data.data[1].imageUrl then
@@ -89,7 +100,6 @@ end
 
 -- ==================== BUAT UI ====================
 local function createUI()
-    -- Hapus UI lama
     if CoreGui:FindFirstChild("FishItWebhookUI") then
         CoreGui:FindFirstChild("FishItWebhookUI"):Destroy()
     end
@@ -103,8 +113,8 @@ local function createUI()
     -- Main Frame
     local MainFrame = Instance.new("Frame")
     MainFrame.Name = "MainFrame"
-    MainFrame.Size = UDim2.new(0, 400, 0, 600)
-    MainFrame.Position = UDim2.new(0.5, -200, 0.5, -300)
+    MainFrame.Size = UDim2.new(0, 420, 0, 700)
+    MainFrame.Position = UDim2.new(0.5, -210, 0.5, -350)
     MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
     MainFrame.BorderSizePixel = 0
     MainFrame.Active = true
@@ -115,7 +125,6 @@ local function createUI()
     MainCorner.CornerRadius = UDim.new(0, 15)
     MainCorner.Parent = MainFrame
     
-    -- Shadow
     local Shadow = Instance.new("ImageLabel")
     Shadow.Name = "Shadow"
     Shadow.Size = UDim2.new(1, 40, 1, 40)
@@ -148,15 +157,31 @@ local function createUI()
     TitleCover.Parent = TitleBar
     
     local Title = Instance.new("TextLabel")
-    Title.Size = UDim2.new(1, -80, 1, 0)
+    Title.Size = UDim2.new(1, -120, 1, 0)
     Title.Position = UDim2.new(0, 20, 0, 0)
     Title.BackgroundTransparency = 1
-    Title.Text = "🎣 Fish It Webhook"
+    Title.Text = "🎣 Webhook By Raditya"
     Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    Title.TextSize = 20
+    Title.TextSize = 18
     Title.Font = Enum.Font.GothamBold
     Title.TextXAlignment = Enum.TextXAlignment.Left
     Title.Parent = TitleBar
+    
+    -- Minimize Button
+    local MinimizeBtn = Instance.new("TextButton")
+    MinimizeBtn.Size = UDim2.new(0, 45, 0, 45)
+    MinimizeBtn.Position = UDim2.new(1, -110, 0, 7.5)
+    MinimizeBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 220)
+    MinimizeBtn.Text = "−"
+    MinimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    MinimizeBtn.TextSize = 28
+    MinimizeBtn.Font = Enum.Font.GothamBold
+    MinimizeBtn.BorderSizePixel = 0
+    MinimizeBtn.Parent = TitleBar
+    
+    local MinimizeBtnCorner = Instance.new("UICorner")
+    MinimizeBtnCorner.CornerRadius = UDim.new(0, 10)
+    MinimizeBtnCorner.Parent = MinimizeBtn
     
     -- Close Button
     local CloseBtn = Instance.new("TextButton")
@@ -174,26 +199,74 @@ local function createUI()
     CloseBtnCorner.CornerRadius = UDim.new(0, 10)
     CloseBtnCorner.Parent = CloseBtn
     
-    CloseBtn.MouseButton1Click:Connect(function()
-        ScreenGui:Destroy()
-        for _, conn in pairs(connections) do
-            conn:Disconnect()
-        end
-    end)
+    -- Content Frame (yang bisa di-minimize)
+    local ContentFrame = Instance.new("Frame")
+    ContentFrame.Name = "ContentFrame"
+    ContentFrame.Size = UDim2.new(1, 0, 1, -60)
+    ContentFrame.Position = UDim2.new(0, 0, 0, 60)
+    ContentFrame.BackgroundTransparency = 1
+    ContentFrame.Parent = MainFrame
+    
+    -- Webhook URL Input
+    local UrlFrame = Instance.new("Frame")
+    UrlFrame.Size = UDim2.new(1, -30, 0, 90)
+    UrlFrame.Position = UDim2.new(0, 15, 0, 15)
+    UrlFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+    UrlFrame.BorderSizePixel = 0
+    UrlFrame.Parent = ContentFrame
+    
+    local UrlCorner = Instance.new("UICorner")
+    UrlCorner.CornerRadius = UDim.new(0, 12)
+    UrlCorner.Parent = UrlFrame
+    
+    local UrlLabel = Instance.new("TextLabel")
+    UrlLabel.Size = UDim2.new(1, -20, 0, 25)
+    UrlLabel.Position = UDim2.new(0, 10, 0, 8)
+    UrlLabel.BackgroundTransparency = 1
+    UrlLabel.Text = "🌐 Webhook URL:"
+    UrlLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    UrlLabel.TextSize = 14
+    UrlLabel.Font = Enum.Font.GothamBold
+    UrlLabel.TextXAlignment = Enum.TextXAlignment.Left
+    UrlLabel.Parent = UrlFrame
+    
+    local UrlInput = Instance.new("TextBox")
+    UrlInput.Name = "UrlInput"
+    UrlInput.Size = UDim2.new(1, -20, 0, 45)
+    UrlInput.Position = UDim2.new(0, 10, 0, 35)
+    UrlInput.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
+    UrlInput.BorderSizePixel = 0
+    UrlInput.Text = ""
+    UrlInput.PlaceholderText = "Paste webhook URL here..."
+    UrlInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+    UrlInput.PlaceholderColor3 = Color3.fromRGB(100, 100, 100)
+    UrlInput.TextSize = 11
+    UrlInput.Font = Enum.Font.Code
+    UrlInput.TextXAlignment = Enum.TextXAlignment.Left
+    UrlInput.ClearTextOnFocus = false
+    UrlInput.Parent = UrlFrame
+    
+    local UrlInputCorner = Instance.new("UICorner")
+    UrlInputCorner.CornerRadius = UDim.new(0, 8)
+    UrlInputCorner.Parent = UrlInput
+    
+    local UrlInputPadding = Instance.new("UIPadding")
+    UrlInputPadding.PaddingLeft = UDim.new(0, 10)
+    UrlInputPadding.PaddingRight = UDim.new(0, 10)
+    UrlInputPadding.Parent = UrlInput
     
     -- Status Panel
     local StatusPanel = Instance.new("Frame")
     StatusPanel.Size = UDim2.new(1, -30, 0, 120)
-    StatusPanel.Position = UDim2.new(0, 15, 0, 75)
+    StatusPanel.Position = UDim2.new(0, 15, 0, 120)
     StatusPanel.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
     StatusPanel.BorderSizePixel = 0
-    StatusPanel.Parent = MainFrame
+    StatusPanel.Parent = ContentFrame
     
     local StatusCorner = Instance.new("UICorner")
     StatusCorner.CornerRadius = UDim.new(0, 12)
     StatusCorner.Parent = StatusPanel
     
-    -- Status Text
     local StatusText = Instance.new("TextLabel")
     StatusText.Name = "StatusText"
     StatusText.Size = UDim2.new(1, -20, 0, 25)
@@ -242,56 +315,57 @@ local function createUI()
     ErrorText.TextXAlignment = Enum.TextXAlignment.Left
     ErrorText.Parent = StatusPanel
     
-    -- Buttons Panel
-    local ButtonsPanel = Instance.new("Frame")
-    ButtonsPanel.Size = UDim2.new(1, -30, 0, 55)
-    ButtonsPanel.Position = UDim2.new(0, 15, 0, 210)
-    ButtonsPanel.BackgroundTransparency = 1
-    ButtonsPanel.Parent = MainFrame
+    -- Toggle Frame (ON/OFF Switch)
+    local ToggleFrame = Instance.new("Frame")
+    ToggleFrame.Size = UDim2.new(1, -30, 0, 70)
+    ToggleFrame.Position = UDim2.new(0, 15, 0, 255)
+    ToggleFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+    ToggleFrame.BorderSizePixel = 0
+    ToggleFrame.Parent = ContentFrame
     
-    local StartBtn = Instance.new("TextButton")
-    StartBtn.Name = "StartBtn"
-    StartBtn.Size = UDim2.new(0.48, 0, 1, 0)
-    StartBtn.Position = UDim2.new(0, 0, 0, 0)
-    StartBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 80)
-    StartBtn.Text = "▶ START"
-    StartBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    StartBtn.TextSize = 16
-    StartBtn.Font = Enum.Font.GothamBold
-    StartBtn.BorderSizePixel = 0
-    StartBtn.Parent = ButtonsPanel
+    local ToggleCorner = Instance.new("UICorner")
+    ToggleCorner.CornerRadius = UDim.new(0, 12)
+    ToggleCorner.Parent = ToggleFrame
     
-    local StartBtnCorner = Instance.new("UICorner")
-    StartBtnCorner.CornerRadius = UDim.new(0, 10)
-    StartBtnCorner.Parent = StartBtn
+    local ToggleLabel = Instance.new("TextLabel")
+    ToggleLabel.Size = UDim2.new(1, -130, 1, 0)
+    ToggleLabel.Position = UDim2.new(0, 15, 0, 0)
+    ToggleLabel.BackgroundTransparency = 1
+    ToggleLabel.Text = "⚡ Webhook Status"
+    ToggleLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    ToggleLabel.TextSize = 16
+    ToggleLabel.Font = Enum.Font.GothamBold
+    ToggleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    ToggleLabel.Parent = ToggleFrame
     
-    local StopBtn = Instance.new("TextButton")
-    StopBtn.Name = "StopBtn"
-    StopBtn.Size = UDim2.new(0.48, 0, 1, 0)
-    StopBtn.Position = UDim2.new(0.52, 0, 0, 0)
-    StopBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-    StopBtn.Text = "⬛ STOP"
-    StopBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    StopBtn.TextSize = 16
-    StopBtn.Font = Enum.Font.GothamBold
-    StopBtn.BorderSizePixel = 0
-    StopBtn.Parent = ButtonsPanel
+    -- Toggle Button (ON/OFF)
+    local ToggleButton = Instance.new("TextButton")
+    ToggleButton.Name = "ToggleButton"
+    ToggleButton.Size = UDim2.new(0, 100, 0, 45)
+    ToggleButton.Position = UDim2.new(1, -115, 0.5, -22.5)
+    ToggleButton.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+    ToggleButton.Text = "OFF"
+    ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    ToggleButton.TextSize = 18
+    ToggleButton.Font = Enum.Font.GothamBold
+    ToggleButton.BorderSizePixel = 0
+    ToggleButton.Parent = ToggleFrame
     
-    local StopBtnCorner = Instance.new("UICorner")
-    StopBtnCorner.CornerRadius = UDim.new(0, 10)
-    StopBtnCorner.Parent = StopBtn
+    local ToggleButtonCorner = Instance.new("UICorner")
+    ToggleButtonCorner.CornerRadius = UDim.new(0, 10)
+    ToggleButtonCorner.Parent = ToggleButton
     
     -- Copy Button
     local CopyBtn = Instance.new("TextButton")
-    CopyBtn.Size = UDim2.new(1, -30, 0, 45)
-    CopyBtn.Position = UDim2.new(0, 15, 0, 275)
+    CopyBtn.Size = UDim2.new(1, -30, 0, 50)
+    CopyBtn.Position = UDim2.new(0, 15, 0, 340)
     CopyBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 220)
     CopyBtn.Text = "📋 COPY LOG"
     CopyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    CopyBtn.TextSize = 15
+    CopyBtn.TextSize = 16
     CopyBtn.Font = Enum.Font.GothamBold
     CopyBtn.BorderSizePixel = 0
-    CopyBtn.Parent = MainFrame
+    CopyBtn.Parent = ContentFrame
     
     local CopyBtnCorner = Instance.new("UICorner")
     CopyBtnCorner.CornerRadius = UDim.new(0, 10)
@@ -300,15 +374,15 @@ local function createUI()
     -- Log Frame
     local LogFrame = Instance.new("ScrollingFrame")
     LogFrame.Name = "LogFrame"
-    LogFrame.Size = UDim2.new(1, -30, 0, 250)
-    LogFrame.Position = UDim2.new(0, 15, 0, 335)
+    LogFrame.Size = UDim2.new(1, -30, 0, 230)
+    LogFrame.Position = UDim2.new(0, 15, 0, 405)
     LogFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
     LogFrame.BorderSizePixel = 0
     LogFrame.ScrollBarThickness = 8
     LogFrame.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 120)
     LogFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
     LogFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-    LogFrame.Parent = MainFrame
+    LogFrame.Parent = ContentFrame
     
     local LogCorner = Instance.new("UICorner")
     LogCorner.CornerRadius = UDim.new(0, 12)
@@ -349,17 +423,26 @@ local function createUI()
     end
     
     -- ==================== FUNGSI WEBHOOK ====================
-    local errorCount = 0
-    
     local function sendWebhook(fishId, weight, metadata)
         task.spawn(function()
+            if WEBHOOK_URL == "" then
+                addLog("❌ Webhook URL kosong! Isi URL dulu", Color3.fromRGB(255, 100, 100))
+                errorCount = errorCount + 1
+                ErrorText.Text = "⚠️ Errors: " .. errorCount
+                return
+            end
+            
             local player = Players.LocalPlayer
             local assetId, fishName = FindFishAssetId(fishId)
             local imageUrl = nil
             
             if assetId then
                 imageUrl = GetRobloxImage(assetId)
-                addLog("🖼️ Asset ID: " .. assetId .. (imageUrl and " (Image found)" or " (No image)"), Color3.fromRGB(150, 150, 255))
+                if imageUrl then
+                    addLog("🖼️ Gambar ditemukan: Asset " .. assetId, Color3.fromRGB(150, 255, 150))
+                else
+                    addLog("⚠️ Gambar tidak ditemukan untuk Asset " .. assetId, Color3.fromRGB(255, 200, 100))
+                end
             end
             
             local color = 3066993
@@ -374,7 +457,7 @@ local function createUI()
                 {["name"] = "🆔 ID", ["value"] = "```" .. fishId .. "```", ["inline"] = true},
                 {["name"] = "⚖️ Berat", ["value"] = weight and ("```" .. string.format("%.2f kg", weight) .. "```") or "```N/A```", ["inline"] = true},
                 {["name"] = "👤 Player", ["value"] = "```" .. player.Name .. "```", ["inline"] = true},
-                {["name"] = "🕐 Time", ["value"] = "```" .. os.date("%H:%M:%S") .. "```", ["inline"] = true}
+                {["name"] = "🕐 Waktu", ["value"] = "```" .. os.date("%H:%M:%S") .. "```", ["inline"] = true}
             }
             
             local embed = {
@@ -382,6 +465,7 @@ local function createUI()
                 ["description"] = "**" .. player.Name .. "** menangkap **" .. fishName .. "**!",
                 ["color"] = color,
                 ["fields"] = fields,
+                ["footer"] = {["text"] = "Webhook By Raditya"},
                 ["timestamp"] = os.date("!%Y-%m-%dT%H:%M:%S")
             }
             
@@ -395,131 +479,175 @@ local function createUI()
                 ["embeds"] = {embed}
             }
             
+            -- Gunakan request untuk bypass executor protection
             local webhookSuccess, response = pcall(function()
-                return HttpService:PostAsync(WEBHOOK_URL, HttpService:JSONEncode(data), Enum.HttpContentType.ApplicationJson, false)
+                return request({
+                    Url = WEBHOOK_URL,
+                    Method = "POST",
+                    Headers = {
+                        ["Content-Type"] = "application/json"
+                    },
+                    Body = HttpService:JSONEncode(data)
+                })
             end)
             
-            if webhookSuccess then
+            if webhookSuccess and response and response.StatusCode and response.StatusCode >= 200 and response.StatusCode < 300 then
                 successfulWebhooks = successfulWebhooks + 1
                 WebhookCounter.Text = "✅ Webhooks Sent: " .. successfulWebhooks
-                addLog("✅ Webhook sent: " .. fishName, Color3.fromRGB(100, 255, 100))
+                addLog("✅ Webhook terkirim: " .. fishName, Color3.fromRGB(100, 255, 100))
             else
                 errorCount = errorCount + 1
                 ErrorText.Text = "⚠️ Errors: " .. errorCount
-                addLog("❌ Webhook failed: " .. tostring(response), Color3.fromRGB(255, 100, 100))
+                local errorMsg = "Unknown error"
+                if response and response.StatusCode then
+                    errorMsg = "HTTP " .. response.StatusCode
+                elseif response then
+                    errorMsg = tostring(response)
+                end
+                addLog("❌ Webhook gagal: " .. errorMsg, Color3.fromRGB(255, 100, 100))
                 
+                -- Fallback: copy to clipboard
                 if setclipboard then
-                    setclipboard(string.format("Fish: %s | ID: %d | Weight: %.2f kg", fishName, fishId, weight or 0))
-                    addLog("📋 Data copied to clipboard", Color3.fromRGB(255, 200, 100))
+                    local clipText = string.format("🎣 Fish: %s | ID: %d | Weight: %.2f kg", fishName, fishId, weight or 0)
+                    setclipboard(clipText)
+                    addLog("📋 Data di-copy ke clipboard", Color3.fromRGB(255, 200, 100))
                 end
             end
         end)
     end
     
-    -- ==================== START/STOP ====================
-    local function startMonitoring()
-        if isRunning then
-            addLog("⚠️ Already running!", Color3.fromRGB(255, 200, 0))
-            return
-        end
-        
-        isRunning = true
-        StatusText.Text = "Status: 🟢 Running"
-        StatusText.TextColor3 = Color3.fromRGB(100, 255, 100)
-        addLog("✅ Monitoring started!", Color3.fromRGB(100, 255, 100))
-        
-        -- Test HttpService
-        local httpTest = pcall(function()
-            game:HttpGet("https://httpbin.org/get")
-        end)
-        
-        if not httpTest then
-            addLog("⚠️ HttpService disabled! Webhook won't work", Color3.fromRGB(255, 150, 50))
-            addLog("💡 Data will be copied to clipboard instead", Color3.fromRGB(200, 200, 255))
+    -- ==================== TOGGLE FUNCTION ====================
+    local function toggleWebhook()
+        if not isRunning then
+            -- START
+            WEBHOOK_URL = UrlInput.Text
+            
+            if WEBHOOK_URL == "" or not WEBHOOK_URL:match("discord.com/api/webhooks") then
+                addLog("❌ Webhook URL tidak valid!", Color3.fromRGB(255, 50, 50))
+                return
+            end
+            
+            isRunning = true
+            ToggleButton.BackgroundColor3 = Color3.fromRGB(50, 200, 80)
+            ToggleButton.Text = "ON"
+            StatusText.Text = "Status: 🟢 Running"
+            StatusText.TextColor3 = Color3.fromRGB(100, 255, 100)
+            addLog("✅ Webhook aktif!", Color3.fromRGB(100, 255, 100))
+            
+            -- Test request function
+            local requestTest = pcall(function()
+                request({Url = "https://httpbin.org/get", Method = "GET"})
+            end)
+            
+            if not requestTest then
+                addLog("⚠️ Request function tidak tersedia!", Color3.fromRGB(255, 150, 50))
+                addLog("💡 Coba executor lain (Arceus X, Delta X, Fluxus)", Color3.fromRGB(200, 200, 255))
+            else
+                addLog("✅ Request function tersedia", Color3.fromRGB(100, 255, 100))
+            end
+            
+            -- Hook event
+            local eventSuccess, FishEvent = pcall(function()
+                return ReplicatedStorage.Packages._Index["sleitnick_net@0.2.0"].net["RE/ObtainedNewFishNotification"]
+            end)
+            
+            if not eventSuccess then
+                addLog("❌ Event ikan tidak ditemukan!", Color3.fromRGB(255, 50, 50))
+                isRunning = false
+                ToggleButton.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+                ToggleButton.Text = "OFF"
+                StatusText.Text = "Status: 🔴 Error"
+                return
+            end
+            
+            addLog("✅ Event hooked: ObtainedNewFishNotification", Color3.fromRGB(150, 255, 150))
+            
+            local conn = FishEvent.OnClientEvent:Connect(function(fishId, metadata1, metadata2, ...)
+                local weight = nil
+                
+                if typeof(metadata1) == "table" and metadata1.Weight then
+                    weight = metadata1.Weight
+                end
+                
+                if typeof(metadata2) == "table" and metadata2.InventoryItem and metadata2.InventoryItem.Metadata then
+                    weight = metadata2.InventoryItem.Metadata.Weight or weight
+                end
+                
+                totalFishCaught = totalFishCaught + 1
+                FishCounter.Text = "🐟 Fish Caught: " .. totalFishCaught
+                
+                addLog("🎣 Ikan tertangkap! ID: " .. fishId .. " | Berat: " .. (weight and string.format("%.2f kg", weight) or "Unknown"), Color3.fromRGB(100, 200, 255))
+                
+                sendWebhook(fishId, weight, metadata2)
+            end)
+            
+            table.insert(connections, conn)
+            addLog("🎣 Siap! Tangkap ikan untuk test", Color3.fromRGB(255, 255, 100))
+            
         else
-            addLog("✅ HttpService enabled", Color3.fromRGB(100, 255, 100))
-        end
-        
-        -- Hook event
-        local eventSuccess, FishEvent = pcall(function()
-            return ReplicatedStorage.Packages._Index["sleitnick_net@0.2.0"].net["RE/ObtainedNewFishNotification"]
-        end)
-        
-        if not eventSuccess then
-            addLog("❌ Cannot find fish event!", Color3.fromRGB(255, 50, 50))
+            -- STOP
             isRunning = false
-            StatusText.Text = "Status: 🔴 Error"
-            return
+            ToggleButton.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+            ToggleButton.Text = "OFF"
+            StatusText.Text = "Status: 🔴 Stopped"
+            StatusText.TextColor3 = Color3.fromRGB(255, 100, 100)
+            
+            for _, conn in pairs(connections) do
+                conn:Disconnect()
+            end
+            connections = {}
+            
+            addLog("🛑 Webhook dimatikan", Color3.fromRGB(255, 100, 100))
         end
-        
-        addLog("✅ Event hooked: ObtainedNewFishNotification", Color3.fromRGB(150, 255, 150))
-        
-        local conn = FishEvent.OnClientEvent:Connect(function(fishId, metadata1, metadata2, ...)
-            local weight = nil
-            
-            if typeof(metadata1) == "table" and metadata1.Weight then
-                weight = metadata1.Weight
-            end
-            
-            if typeof(metadata2) == "table" and metadata2.InventoryItem and metadata2.InventoryItem.Metadata then
-                weight = metadata2.InventoryItem.Metadata.Weight or weight
-            end
-            
-            totalFishCaught = totalFishCaught + 1
-            FishCounter.Text = "🐟 Fish Caught: " .. totalFishCaught
-            
-            addLog("🎣 Fish caught! ID: " .. fishId .. " | Weight: " .. (weight and string.format("%.2f kg", weight) or "Unknown"), Color3.fromRGB(100, 200, 255))
-            
-            sendWebhook(fishId, weight, metadata2)
-        end)
-        
-        table.insert(connections, conn)
-        addLog("🎣 Ready! Catch a fish to test", Color3.fromRGB(255, 255, 100))
     end
     
-    local function stopMonitoring()
-        if not isRunning then
-            addLog("⚠️ Not running!", Color3.fromRGB(255, 200, 0))
-            return
+    -- ==================== MINIMIZE FUNCTION ====================
+    local function toggleMinimize()
+        isMinimized = not isMinimized
+        
+        if isMinimized then
+            ContentFrame.Visible = false
+            MainFrame.Size = UDim2.new(0, 420, 0, 60)
+            MinimizeBtn.Text = "+"
+        else
+            ContentFrame.Visible = true
+            MainFrame.Size = UDim2.new(0, 420, 0, 700)
+            MinimizeBtn.Text = "−"
         end
-        
-        isRunning = false
-        StatusText.Text = "Status: 🔴 Stopped"
-        StatusText.TextColor3 = Color3.fromRGB(255, 100, 100)
-        
-        for _, conn in pairs(connections) do
-            conn:Disconnect()
-        end
-        connections = {}
-        
-        addLog("🛑 Monitoring stopped", Color3.fromRGB(255, 100, 100))
     end
     
     local function copyLog()
         if fullLog == "" then
-            addLog("⚠️ No log to copy!", Color3.fromRGB(255, 200, 0))
+            addLog("⚠️ Tidak ada log untuk di-copy!", Color3.fromRGB(255, 200, 0))
             return
         end
         
         if setclipboard then
             setclipboard(fullLog)
-            addLog("📋 Log copied to clipboard!", Color3.fromRGB(100, 255, 100))
+            addLog("📋 Log berhasil di-copy ke clipboard!", Color3.fromRGB(100, 255, 100))
         else
-            addLog("❌ Clipboard not supported on this executor", Color3.fromRGB(255, 100, 100))
+            addLog("❌ Clipboard tidak support di executor ini", Color3.fromRGB(255, 100, 100))
         end
     end
     
-    -- Button events
-    StartBtn.MouseButton1Click:Connect(startMonitoring)
-    StopBtn.MouseButton1Click:Connect(stopMonitoring)
+    -- Button Events
+    ToggleButton.MouseButton1Click:Connect(toggleWebhook)
+    MinimizeBtn.MouseButton1Click:Connect(toggleMinimize)
+    CloseBtn.MouseButton1Click:Connect(function()
+        ScreenGui:Destroy()
+        for _, conn in pairs(connections) do
+            conn:Disconnect()
+        end
+    end)
     CopyBtn.MouseButton1Click:Connect(copyLog)
     
-    -- Initial logs
-    addLog("🎣 Fish It Webhook UI Loaded!", Color3.fromRGB(100, 255, 255))
-    addLog("📱 Mobile/Android compatible", Color3.fromRGB(200, 200, 200))
-    addLog("🚀 Click START to begin", Color3.fromRGB(200, 200, 200))
+    -- Initial Logs
+    addLog("🎣 Webhook By Raditya Loaded!", Color3.fromRGB(100, 255, 255))
+    addLog("📱 UI siap digunakan", Color3.fromRGB(200, 200, 200))
+    addLog("🌐 Masukkan webhook URL lalu klik ON", Color3.fromRGB(200, 200, 200))
+    addLog("💡 Gunakan tombol − untuk minimize UI", Color3.fromRGB(200, 200, 200))
 end
 
 -- ==================== JALANKAN ====================
 createUI()
-print("✅ Fish It Webhook UI loaded successfully!")
+print("✅ UI Loaded! Check your screen")
