@@ -200,34 +200,98 @@ local function onItemObtained(itemName, rarity, metadata)
     end
 end
 
--- Hook into game events (Generic approach)
+-- Hook into game events (Advanced approach)
 local function setupHooks()
-    -- Try to find RemoteEvent for fish caught
     local foundRemote = false
     
-    for _, remote in ipairs(ReplicatedStorage:GetDescendants()) do
-        if remote:IsA("RemoteEvent") and (
-            remote.Name:lower():find("fish") or 
-            remote.Name:lower():find("catch") or 
-            remote.Name:lower():find("obtain")
-        ) then
-            remote.OnClientEvent:Connect(function(...)
-                local args = {...}
-                -- Try to parse arguments
-                pcall(function()
-                    if type(args[1]) == "string" then
-                        onItemObtained(args[1], args[2] or "Common", args[3] or {})
+    -- Method 1: Look for specific RemoteEvent
+    local function tryHookRemote(remote)
+        if not remote or not remote:IsA("RemoteEvent") then return false end
+        
+        remote.OnClientEvent:Connect(function(...)
+            local args = {...}
+            print("[Raditya Debug] Event fired:", remote.Name, "Args:", ...)
+            
+            pcall(function()
+                -- Try different argument patterns
+                if type(args[1]) == "number" or type(args[1]) == "string" then
+                    local itemId = args[1]
+                    local metadata = args[2] or {}
+                    
+                    -- Get item name from ReplicatedStorage
+                    local itemObj = ReplicatedStorage.Items:FindFirstChild(tostring(itemId))
+                    if itemObj then
+                        local itemName = itemObj.Name
+                        local rarity = "Common"
+                        
+                        -- Try to get rarity
+                        if type(metadata) == "table" then
+                            rarity = metadata.Rarity or metadata.rarity or "Common"
+                        end
+                        
+                        print("[Raditya] Caught:", itemName, rarity)
+                        onItemObtained(itemName, rarity, metadata)
                     end
-                end)
+                elseif type(args[1]) == "table" then
+                    -- Arguments might be in table format
+                    local data = args[1]
+                    if data.Id or data.ItemId or data.Name then
+                        local itemName = data.Name or "Unknown"
+                        local rarity = data.Rarity or "Common"
+                        local metadata = data.Metadata or data
+                        
+                        print("[Raditya] Caught:", itemName, rarity)
+                        onItemObtained(itemName, rarity, metadata)
+                    end
+                end
             end)
-            foundRemote = true
+        end)
+        return true
+    end
+    
+    -- Search for RemoteEvents
+    for _, remote in ipairs(ReplicatedStorage:GetDescendants()) do
+        if remote:IsA("RemoteEvent") then
+            local name = remote.Name:lower()
+            if name:find("fish") or name:find("catch") or name:find("obtain") or 
+               name:find("notification") or name:find("new") then
+                if tryHookRemote(remote) then
+                    foundRemote = true
+                    print("[Raditya] Hooked to:", remote:GetFullName())
+                end
+            end
         end
     end
     
+    -- Method 2: Monitor player inventory changes
+    task.spawn(function()
+        local lastCount = 0
+        while true do
+            task.wait(1)
+            local leaderstats = LocalPlayer:FindFirstChild("leaderstats")
+            if leaderstats then
+                local caught = leaderstats:FindFirstChild("Caught")
+                if caught and caught.Value > lastCount then
+                    lastCount = caught.Value
+                    print("[Raditya] Inventory changed! New catch detected.")
+                    -- Trigger a test notification
+                    if isWebhookEnabled then
+                        Rayfield:Notify({
+                            Title = "Fish Caught!",
+                            Content = "Detected new catch! Check webhook.",
+                            Duration = 2,
+                            Image = 4483362458
+                        })
+                    end
+                end
+            end
+        end
+    end)
+    
     if not foundRemote then
         Rayfield:Notify({
-            Title = "Warning",
-            Content = "Could not find game events. Manual testing only.",
+            Title = "Debug Mode",
+            Content = "Using inventory monitor. Check console for events.",
             Duration = 5,
             Image = 4483362458
         })
