@@ -1,5 +1,5 @@
 -- ==================== FISH IT WEBHOOK BY RADITYA ====================
--- Using WindUI Library with Auto Fish Name Detection + FIXED IMAGE SYSTEM
+-- Using WindUI Library with PROPER Fish Detection System
 
 print("=" .. string.rep("=", 50))
 print("🎣 Webhook By Raditya Loaded!")
@@ -19,12 +19,11 @@ local isRunning = false
 local connections = {}
 local totalFishCaught = 0
 local successfulWebhooks = 0
-local fishCache = {} -- Cache untuk data ikan
 
 -- ============================================================
--- 🖼️ SISTEM CACHE GAMBAR (FIXED)
+-- 🖼️ SISTEM CACHE GAMBAR
 -- ============================================================
-local ImageURLCache = {} -- Table untuk menyimpan Link Gambar (ID -> URL)
+local ImageURLCache = {}
 
 -- ==================== FORMAT NUMBER ====================
 local function FormatNumber(n)
@@ -33,95 +32,58 @@ local function FormatNumber(n)
     return formatted:gsub("^%.", "")
 end
 
--- ==================== AUTO DETECT FISH DATA ====================
-local function GetFishData(fishId)
-    -- Cek cache dulu
-    if fishCache[fishId] then
-        return fishCache[fishId].name, fishCache[fishId].assetId
-    end
-    
-    local fishName = "Unknown Fish"
-    local assetId = nil
-    
-    -- Ambil dari Fish Collection
-    local success, fishCollection = pcall(function()
-        return ReplicatedStorage.Modules.ModelDownloader.Collection.Fish
-    end)
-    
-    if success and fishCollection then
-        -- Loop semua fish modules
-        for _, fishModule in pairs(fishCollection:GetChildren()) do
-            if fishModule:IsA("ModuleScript") then
-                local modSuccess, fishData = pcall(function()
-                    return require(fishModule)
-                end)
-                
-                if modSuccess and fishData then
-                    -- Cek ID (bisa Id, ID, atau nama module)
-                    local moduleId = fishData.Id or fishData.ID or fishData.id
-                    
-                    -- Jika nama module adalah angka, itu bisa jadi ID
-                    if not moduleId and tonumber(fishModule.Name) then
-                        moduleId = tonumber(fishModule.Name)
-                    end
-                    
-                    if moduleId == fishId then
-                        -- Ambil nama ikan (bisa Name, DisplayName, FishName, dll)
-                        fishName = fishData.Name or 
-                                   fishData.DisplayName or 
-                                   fishData.FishName or 
-                                   fishData.name or 
-                                   fishModule.Name or
-                                   "Fish #" .. fishId
-                        
-                        -- Ambil Asset ID untuk gambar
-                        assetId = fishData.AssetId or 
-                                 fishData.Asset or 
-                                 fishData.MeshId or 
-                                 fishData.TextureId or
-                                 fishData.ImageId or
-                                 fishData.Icon
-                        
-                        -- Extract angka dari rbxassetid://
-                        if assetId and type(assetId) == "string" then
-                            assetId = tonumber(string.match(tostring(assetId), "%d+"))
-                        elseif assetId and type(assetId) == "number" then
-                            assetId = assetId
-                        end
-                        
-                        -- Cache hasil
-                        fishCache[fishId] = {
-                            name = fishName,
-                            assetId = assetId
-                        }
-                        
-                        print("✅ Found fish:", fishId, "=", fishName, "| Asset:", assetId or "none")
-                        break
+-- ==================== GET ITEM DATA (PROPER WAY) ====================
+local function GetItemData(itemId)
+    local success, result = pcall(function()
+        -- Cara 1: Dari ReplicatedStorage Items
+        local itemsContainer = ReplicatedStorage:FindFirstChild("Items")
+        if itemsContainer then
+            for _, item in pairs(itemsContainer:GetChildren()) do
+                if item:IsA("ModuleScript") then
+                    local itemData = require(item)
+                    if itemData and (itemData.Id == itemId or itemData.ID == itemId) then
+                        return itemData
                     end
                 end
             end
         end
-    else
-        warn("❌ Tidak bisa akses Fish Collection!")
-    end
-    
-    -- Kalau masih tidak ketemu, coba cara alternatif
-    if fishName == "Unknown Fish" then
-        print("⚠️ Fish ID", fishId, "tidak ditemukan di Collection, mencoba cara alternatif...")
         
-        -- Cara 2: Cek apakah ada folder dengan nama ID
-        pcall(function()
-            if fishCollection then
-                local fishFolder = fishCollection:FindFirstChild(tostring(fishId))
-                if fishFolder then
-                    fishName = fishFolder.Name
-                    print("✅ Found via folder name:", fishName)
+        -- Cara 2: Dari Modules jika ada
+        local modulesFolder = ReplicatedStorage:FindFirstChild("Modules")
+        if modulesFolder then
+            local itemUtility = modulesFolder:FindFirstChild("ItemUtility")
+            if itemUtility then
+                local ItemUtil = require(itemUtility)
+                if ItemUtil and ItemUtil.GetItemData then
+                    return ItemUtil:GetItemData(itemId)
                 end
             end
-        end)
+        end
+        
+        return nil
+    end)
+    
+    if success and result then
+        return result
+    end
+    return nil
+end
+
+-- ==================== GET FISH NAME AND RARITY ====================
+local function GetFishNameAndRarity(itemId, metadata)
+    local itemData = GetItemData(itemId)
+    
+    if not itemData then
+        print("⚠️ Item data tidak ditemukan untuk ID:", itemId)
+        return "Unknown Fish", "Common"
     end
     
-    return fishName, assetId
+    local fishName = itemData.Name or itemData.DisplayName or itemData.ItemName or ("Fish #" .. itemId)
+    local rarity = itemData.Rarity or "Common"
+    
+    print("✅ Fish detected:", fishName, "| Rarity:", rarity)
+    
+    return fishName, rarity
 end
 
 -- ==================== GET ROBLOX IMAGE (FIXED WITH CACHE) ====================
@@ -143,7 +105,7 @@ local function GetRobloxAssetImage(assetId)
         if ok and data and data.data and data.data[1] and data.data[1].imageUrl then
             local finalUrl = data.data[1].imageUrl
             
-            -- 3. Simpan ke Cache agar request berikutnya instan
+            -- 3. Simpan ke Cache
             ImageURLCache[assetId] = finalUrl
             print("🖼️ Gambar berhasil diambil dan di-cache:", finalUrl)
             return finalUrl
@@ -154,8 +116,20 @@ local function GetRobloxAssetImage(assetId)
     return nil
 end
 
+-- ==================== GET RARITY COLOR ====================
+local function getRarityColor(rarity)
+    local r = rarity:upper()
+    if r == "SECRET" or r == "DEV" then return 0xFFD700 end
+    if r == "MYTHIC" then return 0x9400D3 end
+    if r == "LEGENDARY" then return 0xFF4500 end
+    if r == "EPIC" then return 0x8A2BE2 end
+    if r == "RARE" then return 0x0000FF end
+    if r == "UNCOMMON" then return 0x00FF00 end
+    return 0x00BFFF -- Common
+end
+
 -- ==================== SEND WEBHOOK (FIXED) ====================
-local function sendWebhook(fishId, weight, metadata)
+local function sendWebhook(itemId, metadata)
     task.spawn(function()
         if WEBHOOK_URL == "" or not WEBHOOK_URL:match("discord.com/api/webhooks") then
             print("❌ Webhook URL tidak valid!")
@@ -164,11 +138,24 @@ local function sendWebhook(fishId, weight, metadata)
         
         local player = Players.LocalPlayer
         
-        -- Auto detect nama dan gambar ikan
-        local fishName, assetId = GetFishData(fishId)
+        -- Ambil data ikan dengan cara yang benar
+        local fishName, fishRarity = GetFishNameAndRarity(itemId, metadata)
+        local weight = metadata and metadata.Weight or 0
         
-        -- Gunakan sistem cache untuk gambar
-        local imageUrl = assetId and GetRobloxAssetImage(assetId)
+        -- Ambil item data untuk gambar
+        local itemData = GetItemData(itemId)
+        local imageUrl = nil
+        
+        if itemData and itemData.Data then
+            local iconRaw = itemData.Data.Icon or itemData.Data.ImageId or itemData.Icon or itemData.ImageId
+            if iconRaw then
+                local assetId = tonumber(string.match(tostring(iconRaw), "%d+"))
+                if assetId then
+                    imageUrl = GetRobloxAssetImage(assetId)
+                    print("🔍 Asset ID ditemukan:", assetId)
+                end
+            end
+        end
         
         -- Fallback image jika tidak ada
         if not imageUrl then
@@ -176,13 +163,23 @@ local function sendWebhook(fishId, weight, metadata)
             print("⚠️ Menggunakan gambar fallback")
         end
         
-        local color = 3066993
-        if weight then
-            if weight > 10 then color = 15844367
-            elseif weight > 5 then color = 16766720
-            elseif weight > 2 then color = 5814783 end
+        -- Hitung sell price jika ada
+        local basePrice = itemData and itemData.SellPrice or 0
+        local sellMultiplier = metadata and metadata.SellMultiplier or 1
+        local sellPrice = basePrice * sellMultiplier
+        local formattedSellPrice = FormatNumber(sellPrice)
+        
+        -- Cek mutation
+        local mutationDisplay = "N/A"
+        if metadata then
+            if metadata.Shiny then
+                mutationDisplay = "✨ Shiny"
+            elseif metadata.VariantId then
+                mutationDisplay = "🎨 Variant #" .. metadata.VariantId
+            end
         end
         
+        local color = getRarityColor(fishRarity)
         local title = string.format("🎣 Raditya Fish Webhook\n\n🐟 New Fish Caught! (%s)", fishName)
         
         local embed = {
@@ -191,8 +188,11 @@ local function sendWebhook(fishId, weight, metadata)
             ["color"] = color,
             ["fields"] = {
                 {["name"] = "🐟 Fish Name", ["value"] = string.format("`%s`", fishName), ["inline"] = true},
-                {["name"] = "🆔 Fish ID", ["value"] = string.format("`%s`", fishId), ["inline"] = true},
-                {["name"] = "⚖️ Weight", ["value"] = weight and (string.format("`%.2f kg`", weight)) or "`N/A`", ["inline"] = true}
+                {["name"] = "🏆 Rarity", ["value"] = string.format("`%s`", fishRarity), ["inline"] = true},
+                {["name"] = "⚖️ Weight", ["value"] = string.format("`%.2f kg`", weight), ["inline"] = true},
+                {["name"] = "✨ Mutation", ["value"] = string.format("`%s`", mutationDisplay), ["inline"] = true},
+                {["name"] = "💰 Sell Price", ["value"] = string.format("`%s$`", formattedSellPrice), ["inline"] = true},
+                {["name"] = "🆔 Fish ID", ["value"] = string.format("`%s`", itemId), ["inline"] = true}
             },
             ["thumbnail"] = {["url"] = imageUrl},
             ["footer"] = {
@@ -298,22 +298,22 @@ ConfigSection:Toggle({
                 return
             end
             
-            local conn = FishEvent.OnClientEvent:Connect(function(fishId, metadata1, metadata2, ...)
-                local weight = nil
+            local conn = FishEvent.OnClientEvent:Connect(function(itemId, metadata1, metadata2, ...)
+                local finalMetadata = nil
                 
-                if typeof(metadata1) == "table" and metadata1.Weight then
-                    weight = metadata1.Weight
-                end
-                
+                -- Parse metadata
                 if typeof(metadata2) == "table" and metadata2.InventoryItem and metadata2.InventoryItem.Metadata then
-                    weight = metadata2.InventoryItem.Metadata.Weight or weight
+                    finalMetadata = metadata2.InventoryItem.Metadata
+                elseif typeof(metadata1) == "table" then
+                    finalMetadata = metadata1
                 end
                 
                 totalFishCaught = totalFishCaught + 1
                 
-                print("🎣 Fish caught! ID:", fishId, "| Weight:", weight and string.format("%.2f kg", weight) or "Unknown")
+                print("🎣 Fish caught! ID:", itemId)
+                print("📦 Metadata:", finalMetadata)
                 
-                sendWebhook(fishId, weight, metadata2)
+                sendWebhook(itemId, finalMetadata)
             end)
             
             table.insert(connections, conn)
@@ -336,6 +336,55 @@ ConfigSection:Toggle({
                 Duration = 3
             })
         end
+    end
+})
+
+-- Debug Section
+local DebugSection = MainTab:Section({
+    Title = "Debug Info"
+})
+
+DebugSection:Button({
+    Title = "Print Game Structure",
+    Description = "Debug: Lihat struktur ReplicatedStorage",
+    Callback = function()
+        print("\n=== GAME STRUCTURE DEBUG ===")
+        
+        -- Cek Items folder
+        local items = ReplicatedStorage:FindFirstChild("Items")
+        if items then
+            print("✅ Items folder found!")
+            print("📁 Items children count:", #items:GetChildren())
+            
+            -- Print beberapa item pertama
+            local count = 0
+            for _, item in pairs(items:GetChildren()) do
+                if count < 5 then
+                    print("  - Item:", item.Name, "| Type:", item.ClassName)
+                    if item:IsA("ModuleScript") then
+                        local success, data = pcall(require, item)
+                        if success then
+                            print("    ID:", data.Id or data.ID or "N/A")
+                            print("    Name:", data.Name or "N/A")
+                        end
+                    end
+                    count = count + 1
+                end
+            end
+        else
+            print("❌ Items folder NOT found!")
+        end
+        
+        -- Cek Modules
+        local modules = ReplicatedStorage:FindFirstChild("Modules")
+        if modules then
+            print("✅ Modules folder found!")
+            for _, module in pairs(modules:GetChildren()) do
+                print("  - Module:", module.Name)
+            end
+        end
+        
+        print("=== END DEBUG ===\n")
     end
 })
 
@@ -366,7 +415,6 @@ task.spawn(function()
         fishLabel:Set(tostring(totalFishCaught))
         webhookLabel:Set(tostring(successfulWebhooks))
         
-        -- Hitung cache
         local cacheCount = 0
         for _ in pairs(ImageURLCache) do
             cacheCount = cacheCount + 1
@@ -387,12 +435,12 @@ InfoSection:Label({
 
 InfoSection:Label({
     Title = "Features:",
-    Description = "✅ Auto fish name detection\n✅ Image caching system\n✅ Weight tracking\n✅ Real-time statistics"
+    Description = "✅ Auto fish name detection\n✅ Image caching system\n✅ Weight & rarity tracking\n✅ Mutation detection"
 })
 
 InfoSection:Label({
     Title = "Made by Raditya",
-    Description = "Auto-detects fish names & images from game"
+    Description = "Auto-detects fish data from game"
 })
 
 -- Test Button
