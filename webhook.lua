@@ -1,5 +1,5 @@
 -- ==================== FISH IT WEBHOOK BY RADITYA ====================
--- Using WindUI Library with Auto Fish Name Detection
+-- Using WindUI Library with Auto Fish Name Detection + FIXED IMAGE SYSTEM
 
 print("=" .. string.rep("=", 50))
 print("🎣 Webhook By Raditya Loaded!")
@@ -14,11 +14,24 @@ local Players = game:GetService("Players")
 
 -- Variables
 local WEBHOOK_URL = ""
+local WEBHOOK_USERNAME = "Raditya Fish Notify"
 local isRunning = false
 local connections = {}
 local totalFishCaught = 0
 local successfulWebhooks = 0
 local fishCache = {} -- Cache untuk data ikan
+
+-- ============================================================
+-- 🖼️ SISTEM CACHE GAMBAR (FIXED)
+-- ============================================================
+local ImageURLCache = {} -- Table untuk menyimpan Link Gambar (ID -> URL)
+
+-- ==================== FORMAT NUMBER ====================
+local function FormatNumber(n)
+    n = math.floor(n)
+    local formatted = tostring(n):reverse():gsub("%d%d%d", "%1."):reverse()
+    return formatted:gsub("^%.", "")
+end
 
 -- ==================== AUTO DETECT FISH DATA ====================
 local function GetFishData(fishId)
@@ -66,11 +79,14 @@ local function GetFishData(fishId)
                                  fishData.Asset or 
                                  fishData.MeshId or 
                                  fishData.TextureId or
-                                 fishData.ImageId
+                                 fishData.ImageId or
+                                 fishData.Icon
                         
                         -- Extract angka dari rbxassetid://
                         if assetId and type(assetId) == "string" then
-                            assetId = assetId:match("%d+")
+                            assetId = tonumber(string.match(tostring(assetId), "%d+"))
+                        elseif assetId and type(assetId) == "number" then
+                            assetId = assetId
                         end
                         
                         -- Cache hasil
@@ -108,33 +124,37 @@ local function GetFishData(fishId)
     return fishName, assetId
 end
 
--- ==================== GET ROBLOX IMAGE ====================
-local function GetRobloxImage(assetId)
-    if not assetId then return nil end
+-- ==================== GET ROBLOX IMAGE (FIXED WITH CACHE) ====================
+local function GetRobloxAssetImage(assetId)
+    if not assetId or assetId == 0 then return nil end
     
-    local url = "https://thumbnails.roblox.com/v1/assets?assetIds=" .. assetId .. "&size=420x420&format=Png&isCircular=false"
+    -- 1. Cek Cache dulu!
+    if ImageURLCache[assetId] then
+        print("🖼️ Gambar dari cache:", assetId)
+        return ImageURLCache[assetId]
+    end
     
-    local success, response = pcall(function()
-        return request({
-            Url = url,
-            Method = "GET"
-        })
-    end)
+    -- 2. Jika tidak ada di cache, baru panggil API
+    local url = string.format("https://thumbnails.roblox.com/v1/assets?assetIds=%d&size=420x420&format=Png&isCircular=false", assetId)
+    local success, response = pcall(game.HttpGet, game, url)
     
-    if success and response and response.Body then
-        local decodeSuccess, data = pcall(function()
-            return HttpService:JSONDecode(response.Body)
-        end)
-        
-        if decodeSuccess and data and data.data and data.data[1] and data.data[1].imageUrl then
-            return data.data[1].imageUrl
+    if success then
+        local ok, data = pcall(HttpService.JSONDecode, HttpService, response)
+        if ok and data and data.data and data.data[1] and data.data[1].imageUrl then
+            local finalUrl = data.data[1].imageUrl
+            
+            -- 3. Simpan ke Cache agar request berikutnya instan
+            ImageURLCache[assetId] = finalUrl
+            print("🖼️ Gambar berhasil diambil dan di-cache:", finalUrl)
+            return finalUrl
         end
     end
     
+    print("⚠️ Gagal mengambil gambar untuk asset:", assetId)
     return nil
 end
 
--- ==================== SEND WEBHOOK ====================
+-- ==================== SEND WEBHOOK (FIXED) ====================
 local function sendWebhook(fishId, weight, metadata)
     task.spawn(function()
         if WEBHOOK_URL == "" or not WEBHOOK_URL:match("discord.com/api/webhooks") then
@@ -146,15 +166,14 @@ local function sendWebhook(fishId, weight, metadata)
         
         -- Auto detect nama dan gambar ikan
         local fishName, assetId = GetFishData(fishId)
-        local imageUrl = nil
         
-        if assetId then
-            imageUrl = GetRobloxImage(assetId)
-            if imageUrl then
-                print("🖼️ Gambar ditemukan:", imageUrl)
-            else
-                print("⚠️ Gambar tidak ditemukan untuk asset:", assetId)
-            end
+        -- Gunakan sistem cache untuk gambar
+        local imageUrl = assetId and GetRobloxAssetImage(assetId)
+        
+        -- Fallback image jika tidak ada
+        if not imageUrl then
+            imageUrl = "https://tr.rbxcdn.com/53eb9b170bea9855c45c9356fb33c070/420/420/Image/Png"
+            print("⚠️ Menggunakan gambar fallback")
         end
         
         local color = 3066993
@@ -164,41 +183,45 @@ local function sendWebhook(fishId, weight, metadata)
             elseif weight > 2 then color = 5814783 end
         end
         
+        local title = string.format("🎣 Raditya Fish Webhook\n\n🐟 New Fish Caught! (%s)", fishName)
+        
         local embed = {
-            ["title"] = "🎣 Ikan Tertangkap!",
-            ["description"] = "**" .. player.Name .. "** menangkap **" .. fishName .. "**!",
+            ["title"] = title,
+            ["description"] = string.format("Caught by **%s**", player.DisplayName or player.Name),
             ["color"] = color,
             ["fields"] = {
-                {["name"] = "🐟 Ikan", ["value"] = "```" .. fishName .. "```", ["inline"] = true},
-                {["name"] = "🆔 Fish ID", ["value"] = "```" .. fishId .. "```", ["inline"] = true},
-                {["name"] = "⚖️ Berat", ["value"] = weight and ("```" .. string.format("%.2f kg", weight) .. "```") or "```N/A```", ["inline"] = true}
+                {["name"] = "🐟 Fish Name", ["value"] = string.format("`%s`", fishName), ["inline"] = true},
+                {["name"] = "🆔 Fish ID", ["value"] = string.format("`%s`", fishId), ["inline"] = true},
+                {["name"] = "⚖️ Weight", ["value"] = weight and (string.format("`%.2f kg`", weight)) or "`N/A`", ["inline"] = true}
             },
-            ["footer"] = {["text"] = "Webhook By Raditya"},
-            ["timestamp"] = os.date("!%Y-%m-%dT%H:%M:%S")
+            ["thumbnail"] = {["url"] = imageUrl},
+            ["footer"] = {
+                ["text"] = string.format("Webhook By Raditya • Total Caught: %d • %s", 
+                    totalFishCaught, 
+                    os.date("%Y-%m-%d %H:%M:%S"))
+            }
         }
         
-        if imageUrl then
-            embed["thumbnail"] = {["url"] = imageUrl}
-        end
-        
-        local data = {
-            ["username"] = "Fish It Bot",
+        local payload = {
+            ["username"] = WEBHOOK_USERNAME,
             ["avatar_url"] = "https://cdn-icons-png.flaticon.com/512/2721/2721284.png",
             ["embeds"] = {embed}
         }
+        
+        local json_data = HttpService:JSONEncode(payload)
         
         local success, response = pcall(function()
             return request({
                 Url = WEBHOOK_URL,
                 Method = "POST",
                 Headers = {["Content-Type"] = "application/json"},
-                Body = HttpService:JSONEncode(data)
+                Body = json_data
             })
         end)
         
         if success and response and response.StatusCode and response.StatusCode >= 200 and response.StatusCode < 300 then
             successfulWebhooks = successfulWebhooks + 1
-            print("✅ Webhook terkirim:", fishName)
+            print("✅ Webhook terkirim:", fishName, "| Image:", imageUrl and "✓" or "✗")
         else
             print("❌ Webhook gagal:", response and response.StatusCode or "No response")
         end
@@ -234,9 +257,9 @@ local ConfigSection = MainTab:Section({
 
 -- Webhook URL Input
 ConfigSection:Input({
-    Title = "Webhook URL",
+    Title = "Discord Webhook URL",
     Description = "Paste your Discord webhook URL here",
-    Placeholder = "discord.com/api/webhooks/...",
+    Placeholder = "https://discord.com/api/webhooks/...",
     Callback = function(value)
         WEBHOOK_URL = value
         print("✅ Webhook URL updated")
@@ -331,12 +354,24 @@ local webhookLabel = StatsSection:Label({
     Description = "0"
 })
 
+local cacheLabel = StatsSection:Label({
+    Title = "Images Cached",
+    Description = "0"
+})
+
 -- Update stats setiap detik
 task.spawn(function()
     while true do
         task.wait(1)
         fishLabel:Set(tostring(totalFishCaught))
         webhookLabel:Set(tostring(successfulWebhooks))
+        
+        -- Hitung cache
+        local cacheCount = 0
+        for _ in pairs(ImageURLCache) do
+            cacheCount = cacheCount + 1
+        end
+        cacheLabel:Set(tostring(cacheCount))
     end
 end)
 
@@ -351,11 +386,73 @@ InfoSection:Label({
 })
 
 InfoSection:Label({
+    Title = "Features:",
+    Description = "✅ Auto fish name detection\n✅ Image caching system\n✅ Weight tracking\n✅ Real-time statistics"
+})
+
+InfoSection:Label({
     Title = "Made by Raditya",
-    Description = "Auto-detects fish names from game"
+    Description = "Auto-detects fish names & images from game"
+})
+
+-- Test Button
+ConfigSection:Button({
+    Title = "Test Webhook",
+    Description = "Send a test message to Discord",
+    Callback = function()
+        if WEBHOOK_URL == "" then
+            WindUI:Notify({
+                Title = "Error",
+                Content = "Please enter webhook URL first!",
+                Duration = 3
+            })
+            return
+        end
+        
+        local testEmbed = {
+            title = "🎣 Raditya Fish Webhook Test",
+            description = "Webhook test successful! ✅",
+            color = 0x00FF00,
+            fields = {
+                {name = "Player", value = Players.LocalPlayer.DisplayName or Players.LocalPlayer.Name, inline = true},
+                {name = "Status", value = "Connected ✓", inline = true},
+                {name = "Cache System", value = "Active ✅", inline = true}
+            },
+            footer = {text = "Webhook By Raditya"}
+        }
+        
+        local payload = {
+            username = WEBHOOK_USERNAME,
+            embeds = {testEmbed}
+        }
+        
+        local success, response = pcall(function()
+            return request({
+                Url = WEBHOOK_URL,
+                Method = "POST",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = HttpService:JSONEncode(payload)
+            })
+        end)
+        
+        if success and response.StatusCode >= 200 and response.StatusCode < 300 then
+            WindUI:Notify({
+                Title = "Test Success!",
+                Content = "Check your Discord channel",
+                Duration = 4
+            })
+        else
+            WindUI:Notify({
+                Title = "Test Failed!",
+                Content = "Check console for errors",
+                Duration = 5
+            })
+        end
+    end
 })
 
 print("✅ WindUI loaded successfully!")
+print("✅ Image cache system active!")
 WindUI:Notify({
     Title = "Webhook By Raditya",
     Content = "UI loaded! Configure your webhook to start.",
