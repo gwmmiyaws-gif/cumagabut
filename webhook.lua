@@ -1,449 +1,560 @@
--- Raditya Webhook System with UI
--- Load Rayfield UI Library
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+-- ==================== FISH IT WEBHOOK - AUTHENTIC RAYFIELD STYLE ====================
+-- Made by Raditya | Inspired by Rayfield UI Library (sirius.menu/rayfield)
 
--- Services
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local CoreGui = game:GetService("CoreGui")
+local TweenService = game:GetService("TweenService")
 
-local LocalPlayer = Players.LocalPlayer
+print("=" .. string.rep("=", 50))
+print("🎣 Webhook By Raditya Loaded!")
+print("=" .. string.rep("=", 50))
 
 -- Variables
+local isRunning = false
+local connections = {}
+local totalFishCaught = 0
+local successfulWebhooks = 0
 local WEBHOOK_URL = ""
-local WEBHOOK_USERNAME = "Raditya Notify"
-local isWebhookEnabled = false
-local SelectedRarityCategories = {}
-local SelectedItemNames = {}
-local NotifyOnMutation = false
 
--- Global Webhook
-local GLOBAL_WEBHOOK_URL = "https://discord.com/api/webhooks/1446677688453566655/Xo6u363NGUlSmxhtfAyjXqw8U9fRkfZ8kdSuDxUf82sDBywgcJkEj3XYngSaKFFWu8Hp"
-local GLOBAL_WEBHOOK_USERNAME = "Raditya | Community"
-local GLOBAL_RARITY_FILTER = {"SECRET", "TROPHY", "COLLECTIBLE", "DEV"}
+-- Rayfield Theme Colors
+local Theme = {
+    Background = Color3.fromRGB(25, 25, 25),
+    Topbar = Color3.fromRGB(34, 34, 34),
+    ElementBackground = Color3.fromRGB(35, 35, 35),
+    ElementBackgroundHover = Color3.fromRGB(40, 40, 40),
+    ElementStroke = Color3.fromRGB(50, 50, 50),
+    TextColor = Color3.fromRGB(240, 240, 240),
+    ToggleEnabled = Color3.fromRGB(0, 146, 214),
+    ToggleDisabled = Color3.fromRGB(100, 100, 100),
+    Shadow = Color3.fromRGB(20, 20, 20)
+}
 
-local RarityList = {"Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Secret", "Trophy", "Collectible", "DEV"}
-
--- Image Cache System
-local ImageURLCache = {}
-
--- Helper Functions
-local function FormatNumber(n)
-    n = math.floor(n)
-    local formatted = tostring(n):reverse():gsub("%d%d%d", "%1."):reverse()
-    return formatted:gsub("^%.", "")
-end
-
-local function GetRobloxAssetImage(assetId)
-    if not assetId or assetId == 0 then return nil end
+-- ==================== FISH DATA FUNCTIONS ====================
+local function GetFishData(fishId)
+    local fishName = "Unknown Fish"
+    local assetId = nil
     
-    if ImageURLCache[assetId] then
-        return ImageURLCache[assetId]
-    end
+    local success, fishCollection = pcall(function()
+        return ReplicatedStorage.Modules.ModelDownloader.Collection.Fish
+    end)
     
-    local url = string.format("https://thumbnails.roblox.com/v1/assets?assetIds=%d&size=420x420&format=Png&isCircular=false", assetId)
-    local success, response = pcall(game.HttpGet, game, url)
-    
-    if success then
-        local ok, data = pcall(HttpService.JSONDecode, HttpService, response)
-        if ok and data and data.data and data.data[1] and data.data[1].imageUrl then
-            local finalUrl = data.data[1].imageUrl
-            ImageURLCache[assetId] = finalUrl
-            return finalUrl
+    if success and fishCollection then
+        for _, fishModule in pairs(fishCollection:GetChildren()) do
+            if fishModule:IsA("ModuleScript") then
+                local modSuccess, data = pcall(function()
+                    return require(fishModule)
+                end)
+                
+                if modSuccess and data then
+                    local moduleId = data.Id or data.ID or tonumber(fishModule.Name)
+                    
+                    if moduleId == fishId then
+                        fishName = data.Name or data.DisplayName or fishModule.Name
+                        assetId = data.AssetId or data.Asset or data.MeshId or data.TextureId
+                        
+                        if assetId and type(assetId) == "string" then
+                            assetId = assetId:match("%d+")
+                        end
+                        break
+                    end
+                end
+            end
         end
     end
+    
+    return fishName, assetId
+end
+
+local function GetRobloxImage(assetId)
+    if not assetId then return nil end
+    
+    local url = "https://thumbnails.roblox.com/v1/assets?assetIds=" .. assetId .. "&size=420x420&format=Png&isCircular=false"
+    
+    local success, response = pcall(function()
+        return request({
+            Url = url,
+            Method = "GET"
+        })
+    end)
+    
+    if success and response and response.Body then
+        local decodeSuccess, data = pcall(function()
+            return HttpService:JSONDecode(response.Body)
+        end)
+        
+        if decodeSuccess and data and data.data and data.data[1] and data.data[1].imageUrl then
+            return data.data[1].imageUrl
+        end
+    end
+    
     return nil
 end
 
-local function getRarityColor(rarity)
-    local r = rarity:upper()
-    if r == "SECRET" then return 0xFFD700 end
-    if r == "MYTHIC" then return 0x9400D3 end
-    if r == "LEGENDARY" then return 0xFF4500 end
-    if r == "EPIC" then return 0x8A2BE2 end
-    if r == "RARE" then return 0x0000FF end
-    if r == "UNCOMMON" then return 0x00FF00 end
-    return 0x00BFFF
-end
-
-local function sendWebhook(url, username, embed_data)
-    local payload = {
-        username = username,
-        embeds = {embed_data}
-    }
-    
-    local json_data = HttpService:JSONEncode(payload)
-    
-    if typeof(request) == "function" then
-        local success, response = pcall(function()
-            return request({
-                Url = url,
-                Method = "POST",
-                Headers = { ["Content-Type"] = "application/json" },
-                Body = json_data
-            })
-        end)
-        
-        if success and (response.StatusCode == 200 or response.StatusCode == 204) then
-            return true, "Sent"
-        elseif success and response.StatusCode then
-            return false, "Failed: " .. response.StatusCode
-        end
+-- ==================== CREATE RAYFIELD UI ====================
+local function createUI()
+    if CoreGui:FindFirstChild("RayfieldWebhook") then
+        CoreGui:FindFirstChild("RayfieldWebhook"):Destroy()
     end
-    return false, "No Request Function"
-end
-
-local function getItemList()
-    local items = {}
-    local itemsContainer = ReplicatedStorage:FindFirstChild("Items")
-    if itemsContainer then
-        for _, item in ipairs(itemsContainer:GetChildren()) do
-            local itemName = item.Name
-            if type(itemName) == "string" and #itemName >= 3 and itemName:sub(1, 3) ~= "!!!" then
-                table.insert(items, itemName)
+    
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "RayfieldWebhook"
+    ScreenGui.ResetOnSpawn = false
+    ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    
+    if gethui then
+        ScreenGui.Parent = gethui()
+    else
+        ScreenGui.Parent = CoreGui
+    end
+    
+    -- Main Container
+    local Main = Instance.new("Frame")
+    Main.Name = "Main"
+    Main.Size = UDim2.new(0, 500, 0, 350)
+    Main.Position = UDim2.new(0.5, -250, 0.5, -175)
+    Main.BackgroundColor3 = Theme.Background
+    Main.BorderSizePixel = 0
+    Main.Active = true
+    Main.Draggable = true
+    Main.ClipsDescendants = true
+    Main.Parent = ScreenGui
+    
+    local MainCorner = Instance.new("UICorner")
+    MainCorner.CornerRadius = UDim.new(0, 8)
+    MainCorner.Parent = Main
+    
+    -- Shadow Effect
+    local Shadow = Instance.new("Frame")
+    Shadow.Name = "Shadow"
+    Shadow.Size = UDim2.new(1, 0, 1, 0)
+    Shadow.Position = UDim2.new(0, 0, 0, 0)
+    Shadow.BackgroundTransparency = 1
+    Shadow.ZIndex = 0
+    Shadow.Parent = Main
+    
+    local ShadowImage = Instance.new("ImageLabel")
+    ShadowImage.Size = UDim2.new(1, 47, 1, 47)
+    ShadowImage.Position = UDim2.new(0.5, 0, 0.5, 0)
+    ShadowImage.AnchorPoint = Vector2.new(0.5, 0.5)
+    ShadowImage.BackgroundTransparency = 1
+    ShadowImage.Image = "rbxassetid://5554236805"
+    ShadowImage.ImageColor3 = Theme.Shadow
+    ShadowImage.ImageTransparency = 0.4
+    ShadowImage.ScaleType = Enum.ScaleType.Slice
+    ShadowImage.SliceCenter = Rect.new(23, 23, 277, 277)
+    ShadowImage.Parent = Shadow
+    
+    -- Topbar
+    local Topbar = Instance.new("Frame")
+    Topbar.Name = "Topbar"
+    Topbar.Size = UDim2.new(1, 0, 0, 45)
+    Topbar.BackgroundColor3 = Theme.Topbar
+    Topbar.BorderSizePixel = 0
+    Topbar.Parent = Main
+    
+    local TopbarCorner = Instance.new("UICorner")
+    TopbarCorner.CornerRadius = UDim.new(0, 8)
+    TopbarCorner.Parent = Topbar
+    
+    local TopbarFix = Instance.new("Frame")
+    TopbarFix.Size = UDim2.new(1, 0, 0, 20)
+    TopbarFix.Position = UDim2.new(0, 0, 1, -20)
+    TopbarFix.BackgroundColor3 = Theme.Topbar
+    TopbarFix.BorderSizePixel = 0
+    TopbarFix.Parent = Topbar
+    
+    local Divider = Instance.new("Frame")
+    Divider.Size = UDim2.new(1, 0, 0, 1)
+    Divider.Position = UDim2.new(0, 0, 1, 0)
+    Divider.BackgroundColor3 = Theme.ElementStroke
+    Divider.BorderSizePixel = 0
+    Divider.Parent = Topbar
+    
+    -- Title
+    local Title = Instance.new("TextLabel")
+    Title.Size = UDim2.new(1, -90, 1, 0)
+    Title.Position = UDim2.new(0, 15, 0, 0)
+    Title.BackgroundTransparency = 1
+    Title.Text = "Fish It Webhook"
+    Title.TextColor3 = Theme.TextColor
+    Title.TextSize = 16
+    Title.Font = Enum.Font.GothamBold
+    Title.TextXAlignment = Enum.TextXAlignment.Left
+    Title.Parent = Topbar
+    
+    local Subtitle = Instance.new("TextLabel")
+    Subtitle.Size = UDim2.new(1, -90, 0, 12)
+    Subtitle.Position = UDim2.new(0, 15, 0, 24)
+    Subtitle.BackgroundTransparency = 1
+    Subtitle.Text = "by Raditya"
+    Subtitle.TextColor3 = Color3.fromRGB(180, 180, 180)
+    Subtitle.TextSize = 11
+    Subtitle.Font = Enum.Font.Gotham
+    Subtitle.TextXAlignment = Enum.TextXAlignment.Left
+    Subtitle.Parent = Topbar
+    
+    -- Close Button
+    local CloseBtn = Instance.new("TextButton")
+    CloseBtn.Size = UDim2.new(0, 30, 0, 30)
+    CloseBtn.Position = UDim2.new(1, -40, 0.5, -15)
+    CloseBtn.BackgroundColor3 = Theme.ElementBackground
+    CloseBtn.Text = "×"
+    CloseBtn.TextColor3 = Theme.TextColor
+    CloseBtn.TextSize = 18
+    CloseBtn.Font = Enum.Font.GothamBold
+    CloseBtn.BorderSizePixel = 0
+    CloseBtn.Parent = Topbar
+    
+    local CloseBtnCorner = Instance.new("UICorner")
+    CloseBtnCorner.CornerRadius = UDim.new(0, 6)
+    CloseBtnCorner.Parent = CloseBtn
+    
+    CloseBtn.MouseEnter:Connect(function()
+        TweenService:Create(CloseBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(220, 50, 70)}):Play()
+    end)
+    
+    CloseBtn.MouseLeave:Connect(function()
+        TweenService:Create(CloseBtn, TweenInfo.new(0.2), {BackgroundColor3 = Theme.ElementBackground}):Play()
+    end)
+    
+    CloseBtn.MouseButton1Click:Connect(function()
+        TweenService:Create(Main, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 0, 0, 0)}):Play()
+        task.wait(0.3)
+        ScreenGui:Destroy()
+        for _, conn in pairs(connections) do
+            conn:Disconnect()
+        end
+    end)
+    
+    -- Content
+    local Content = Instance.new("Frame")
+    Content.Size = UDim2.new(1, -30, 1, -75)
+    Content.Position = UDim2.new(0, 15, 0, 60)
+    Content.BackgroundTransparency = 1
+    Content.Parent = Main
+    
+    -- Webhook URL Input
+    local InputLabel = Instance.new("TextLabel")
+    InputLabel.Size = UDim2.new(1, 0, 0, 16)
+    InputLabel.BackgroundTransparency = 1
+    InputLabel.Text = "Webhook URL"
+    InputLabel.TextColor3 = Theme.TextColor
+    InputLabel.TextSize = 13
+    InputLabel.Font = Enum.Font.GothamBold
+    InputLabel.TextXAlignment = Enum.TextXAlignment.Left
+    InputLabel.Parent = Content
+    
+    local InputContainer = Instance.new("Frame")
+    InputContainer.Size = UDim2.new(1, 0, 0, 40)
+    InputContainer.Position = UDim2.new(0, 0, 0, 22)
+    InputContainer.BackgroundColor3 = Theme.ElementBackground
+    InputContainer.BorderSizePixel = 0
+    InputContainer.Parent = Content
+    
+    local InputCorner = Instance.new("UICorner")
+    InputCorner.CornerRadius = UDim.new(0, 6)
+    InputCorner.Parent = InputContainer
+    
+    local InputStroke = Instance.new("UIStroke")
+    InputStroke.Color = Theme.ElementStroke
+    InputStroke.Thickness = 1
+    InputStroke.Parent = InputContainer
+    
+    local InputBox = Instance.new("TextBox")
+    InputBox.Size = UDim2.new(1, -20, 1, 0)
+    InputBox.Position = UDim2.new(0, 10, 0, 0)
+    InputBox.BackgroundTransparency = 1
+    InputBox.Text = ""
+    InputBox.PlaceholderText = "discord.com/api/webhooks/..."
+    InputBox.TextColor3 = Theme.TextColor
+    InputBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
+    InputBox.TextSize = 12
+    InputBox.Font = Enum.Font.Gotham
+    InputBox.TextXAlignment = Enum.TextXAlignment.Left
+    InputBox.ClearTextOnFocus = false
+    InputBox.Parent = InputContainer
+    
+    -- Toggle Element
+    local ToggleLabel = Instance.new("TextLabel")
+    ToggleLabel.Size = UDim2.new(1, 0, 0, 16)
+    ToggleLabel.Position = UDim2.new(0, 0, 0, 78)
+    ToggleLabel.BackgroundTransparency = 1
+    ToggleLabel.Text = "Enable Webhook"
+    ToggleLabel.TextColor3 = Theme.TextColor
+    ToggleLabel.TextSize = 13
+    ToggleLabel.Font = Enum.Font.GothamBold
+    ToggleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    ToggleLabel.Parent = Content
+    
+    local ToggleContainer = Instance.new("Frame")
+    ToggleContainer.Size = UDim2.new(1, 0, 0, 40)
+    ToggleContainer.Position = UDim2.new(0, 0, 0, 100)
+    ToggleContainer.BackgroundColor3 = Theme.ElementBackground
+    ToggleContainer.BorderSizePixel = 0
+    ToggleContainer.Parent = Content
+    
+    local ToggleCorner = Instance.new("UICorner")
+    ToggleCorner.CornerRadius = UDim.new(0, 6)
+    ToggleCorner.Parent = ToggleContainer
+    
+    local ToggleStroke = Instance.new("UIStroke")
+    ToggleStroke.Color = Theme.ElementStroke
+    ToggleStroke.Thickness = 1
+    ToggleStroke.Parent = ToggleContainer
+    
+    local ToggleText = Instance.new("TextLabel")
+    ToggleText.Size = UDim2.new(1, -70, 1, 0)
+    ToggleText.Position = UDim2.new(0, 12, 0, 0)
+    ToggleText.BackgroundTransparency = 1
+    ToggleText.Text = "Status: Disabled"
+    ToggleText.TextColor3 = Color3.fromRGB(180, 180, 180)
+    ToggleText.TextSize = 12
+    ToggleText.Font = Enum.Font.Gotham
+    ToggleText.TextXAlignment = Enum.TextXAlignment.Left
+    ToggleText.Parent = ToggleContainer
+    
+    -- Rayfield-style Toggle Switch
+    local ToggleOuter = Instance.new("Frame")
+    ToggleOuter.Size = UDim2.new(0, 44, 0, 24)
+    ToggleOuter.Position = UDim2.new(1, -56, 0.5, -12)
+    ToggleOuter.BackgroundColor3 = Theme.ToggleDisabled
+    ToggleOuter.BorderSizePixel = 0
+    ToggleOuter.Parent = ToggleContainer
+    
+    local ToggleOuterCorner = Instance.new("UICorner")
+    ToggleOuterCorner.CornerRadius = UDim.new(1, 0)
+    ToggleOuterCorner.Parent = ToggleOuter
+    
+    local ToggleOuterStroke = Instance.new("UIStroke")
+    ToggleOuterStroke.Color = Color3.fromRGB(125, 125, 125)
+    ToggleOuterStroke.Thickness = 2
+    ToggleOuterStroke.Parent = ToggleOuter
+    
+    local ToggleInner = Instance.new("Frame")
+    ToggleInner.Size = UDim2.new(0, 18, 0, 18)
+    ToggleInner.Position = UDim2.new(0, 3, 0.5, -9)
+    ToggleInner.BackgroundColor3 = Color3.fromRGB(240, 240, 240)
+    ToggleInner.BorderSizePixel = 0
+    ToggleInner.Parent = ToggleOuter
+    
+    local ToggleInnerCorner = Instance.new("UICorner")
+    ToggleInnerCorner.CornerRadius = UDim.new(1, 0)
+    ToggleInnerCorner.Parent = ToggleInner
+    
+    local ToggleButton = Instance.new("TextButton")
+    ToggleButton.Size = UDim2.new(1, 0, 1, 0)
+    ToggleButton.BackgroundTransparency = 1
+    ToggleButton.Text = ""
+    ToggleButton.Parent = ToggleOuter
+    
+    -- Stats
+    local StatsLabel = Instance.new("TextLabel")
+    StatsLabel.Size = UDim2.new(1, 0, 0, 16)
+    StatsLabel.Position = UDim2.new(0, 0, 0, 156)
+    StatsLabel.BackgroundTransparency = 1
+    StatsLabel.Text = "Statistics"
+    StatsLabel.TextColor3 = Theme.TextColor
+    StatsLabel.TextSize = 13
+    StatsLabel.Font = Enum.Font.GothamBold
+    StatsLabel.TextXAlignment = Enum.TextXAlignment.Left
+    StatsLabel.Parent = Content
+    
+    local StatsContainer = Instance.new("Frame")
+    StatsContainer.Size = UDim2.new(1, 0, 0, 80)
+    StatsContainer.Position = UDim2.new(0, 0, 0, 178)
+    StatsContainer.BackgroundColor3 = Theme.ElementBackground
+    StatsContainer.BorderSizePixel = 0
+    StatsContainer.Parent = Content
+    
+    local StatsCorner = Instance.new("UICorner")
+    StatsCorner.CornerRadius = UDim.new(0, 6)
+    StatsCorner.Parent = StatsContainer
+    
+    local StatsStroke = Instance.new("UIStroke")
+    StatsStroke.Color = Theme.ElementStroke
+    StatsStroke.Thickness = 1
+    StatsStroke.Parent = StatsContainer
+    
+    local FishStat = Instance.new("TextLabel")
+    FishStat.Name = "FishStat"
+    FishStat.Size = UDim2.new(1, -20, 0, 20)
+    FishStat.Position = UDim2.new(0, 10, 0, 10)
+    FishStat.BackgroundTransparency = 1
+    FishStat.Text = "🐟 Fish Caught: 0"
+    FishStat.TextColor3 = Theme.TextColor
+    FishStat.TextSize = 12
+    FishStat.Font = Enum.Font.Gotham
+    FishStat.TextXAlignment = Enum.TextXAlignment.Left
+    FishStat.Parent = StatsContainer
+    
+    local WebhookStat = Instance.new("TextLabel")
+    WebhookStat.Name = "WebhookStat"
+    WebhookStat.Size = UDim2.new(1, -20, 0, 20)
+    WebhookStat.Position = UDim2.new(0, 10, 0, 32)
+    WebhookStat.BackgroundTransparency = 1
+    WebhookStat.Text = "✅ Webhooks Sent: 0"
+    WebhookStat.TextColor3 = Theme.TextColor
+    WebhookStat.TextSize = 12
+    WebhookStat.Font = Enum.Font.Gotham
+    WebhookStat.TextXAlignment = Enum.TextXAlignment.Left
+    WebhookStat.Parent = StatsContainer
+    
+    local StatusStat = Instance.new("TextLabel")
+    StatusStat.Name = "StatusStat"
+    StatusStat.Size = UDim2.new(1, -20, 0, 20)
+    StatusStat.Position = UDim2.new(0, 10, 0, 54)
+    StatusStat.BackgroundTransparency = 1
+    StatusStat.Text = "⚡ Status: Ready"
+    StatusStat.TextColor3 = Theme.TextColor
+    StatusStat.TextSize = 12
+    StatusStat.Font = Enum.Font.Gotham
+    StatusStat.TextXAlignment = Enum.TextXAlignment.Left
+    StatusStat.Parent = StatsContainer
+    
+    -- ==================== WEBHOOK FUNCTION ====================
+    local function sendWebhook(fishId, weight, metadata)
+        task.spawn(function()
+            if WEBHOOK_URL == "" or not WEBHOOK_URL:match("discord.com/api/webhooks") then
+                StatusStat.Text = "⚠️ Status: Invalid URL"
+                StatusStat.TextColor3 = Color3.fromRGB(255, 150, 100)
+                return
             end
-        end
-    end
-    table.sort(items)
-    return items
-end
-
-local function shouldNotify(rarity, metadata, itemName)
-    if #SelectedRarityCategories > 0 and table.find(SelectedRarityCategories, rarity:upper()) then
-        return true
-    end
-    
-    if #SelectedItemNames > 0 and table.find(SelectedItemNames, itemName) then
-        return true
-    end
-    
-    if NotifyOnMutation and (metadata.Shiny or metadata.VariantId) then
-        return true
-    end
-    
-    return false
-end
-
-local function CensorName(name)
-    if #name <= 2 then return string.rep("*", #name) end
-    return name:sub(1, 1) .. string.rep("*", #name - 2) .. name:sub(-1)
-end
-
--- Main Webhook Function
-local function onItemObtained(itemName, rarity, metadata)
-    local success = pcall(function()
-        local rarityUpper = rarity:upper()
-        local weight = string.format("%.2fkg", metadata.Weight or 0)
-        local mutation = (metadata.Shiny and "Shiny") or (metadata.VariantId and "Variant") or "N/A"
-        local sellPrice = FormatNumber(metadata.SellPrice or 0)
-        
-        -- Get Image
-        local imageUrl = "https://tr.rbxcdn.com/53eb9b170bea9855c45c9356fb33c070/420/420/Image/Png"
-        if metadata.ImageId then
-            local assetId = tonumber(string.match(tostring(metadata.ImageId), "%d+"))
-            imageUrl = GetRobloxAssetImage(assetId) or imageUrl
-        end
-        
-        -- User Webhook
-        if isWebhookEnabled and WEBHOOK_URL ~= "" and shouldNotify(rarity, metadata, itemName) then
+            
+            local player = Players.LocalPlayer
+            local fishName, assetId = GetFishData(fishId)
+            local imageUrl = assetId and GetRobloxImage(assetId) or nil
+            
+            local color = 3066993
+            if weight then
+                if weight > 10 then color = 15844367
+                elseif weight > 5 then color = 16766720
+                elseif weight > 2 then color = 5814783 end
+            end
+            
             local embed = {
-                title = "🎣 Raditya | New Catch!",
-                description = string.format("**%s** caught a **%s**!", LocalPlayer.DisplayName or LocalPlayer.Name, itemName),
-                color = getRarityColor(rarityUpper),
-                fields = {
-                    { name = "Item Name", value = itemName, inline = true },
-                    { name = "Rarity", value = rarityUpper, inline = true },
-                    { name = "Weight", value = weight, inline = true },
-                    { name = "Mutation", value = mutation, inline = true },
-                    { name = "Sell Price", value = sellPrice .. "$", inline = true },
+                ["title"] = "🎣 Ikan Tertangkap!",
+                ["description"] = "**" .. player.Name .. "** menangkap **" .. fishName .. "**!",
+                ["color"] = color,
+                ["fields"] = {
+                    {["name"] = "🐟 Ikan", ["value"] = "```" .. fishName .. "```", ["inline"] = true},
+                    {["name"] = "🆔 Fish ID", ["value"] = "```" .. fishId .. "```", ["inline"] = true},
+                    {["name"] = "⚖️ Berat", ["value"] = weight and ("```" .. string.format("%.2f kg", weight) .. "```") or "```N/A```", ["inline"] = true}
                 },
-                thumbnail = { url = imageUrl },
-                footer = {
-                    text = string.format("Raditya Webhook • %s", os.date("%Y-%m-%d %H:%M:%S"))
-                }
+                ["footer"] = {["text"] = "Webhook By Raditya"},
+                ["timestamp"] = os.date("!%Y-%m-%dT%H:%M:%S")
             }
             
-            local success_send, msg = sendWebhook(WEBHOOK_URL, WEBHOOK_USERNAME, embed)
-            if success_send then
-                Rayfield:Notify({
-                    Title = "Webhook Sent!",
-                    Content = "Notification sent for " .. itemName,
-                    Duration = 3,
-                    Image = 4483362458
-                })
+            if imageUrl then
+                embed["thumbnail"] = {["url"] = imageUrl}
             end
-        end
-        
-        -- Global Webhook
-        if table.find(GLOBAL_RARITY_FILTER, rarityUpper) and GLOBAL_WEBHOOK_URL ~= "" then
-            local censoredName = CensorName(LocalPlayer.DisplayName or LocalPlayer.Name)
-            local globalEmbed = {
-                title = "🌍 Raditya | Global Tracker",
-                description = string.format("Player **%s** caught a **%s** rarity item!", censoredName, rarityUpper),
-                color = getRarityColor(rarityUpper),
-                fields = {
-                    { name = "Rarity", value = rarityUpper, inline = true },
-                    { name = "Weight", value = weight, inline = true },
-                    { name = "Mutation", value = mutation, inline = true },
-                },
-                thumbnail = { url = imageUrl },
-                footer = {
-                    text = string.format("Raditya Community • Player: %s • %s", censoredName, os.date("%Y-%m-%d %H:%M:%S"))
-                }
-            }
-            sendWebhook(GLOBAL_WEBHOOK_URL, GLOBAL_WEBHOOK_USERNAME, globalEmbed)
-        end
-    end)
-    
-    if not success then
-        warn("[Raditya Webhook] Error processing item data")
-    end
-end
-
--- Hook into game events (Advanced approach)
-local function setupHooks()
-    local foundRemote = false
-    
-    -- Method 1: Look for specific RemoteEvent
-    local function tryHookRemote(remote)
-        if not remote or not remote:IsA("RemoteEvent") then return false end
-        
-        remote.OnClientEvent:Connect(function(...)
-            local args = {...}
-            print("[Raditya Debug] Event fired:", remote.Name, "Args:", ...)
             
-            pcall(function()
-                -- Try different argument patterns
-                if type(args[1]) == "number" or type(args[1]) == "string" then
-                    local itemId = args[1]
-                    local metadata = args[2] or {}
-                    
-                    -- Get item name from ReplicatedStorage
-                    local itemObj = ReplicatedStorage.Items:FindFirstChild(tostring(itemId))
-                    if itemObj then
-                        local itemName = itemObj.Name
-                        local rarity = "Common"
-                        
-                        -- Try to get rarity
-                        if type(metadata) == "table" then
-                            rarity = metadata.Rarity or metadata.rarity or "Common"
-                        end
-                        
-                        print("[Raditya] Caught:", itemName, rarity)
-                        onItemObtained(itemName, rarity, metadata)
-                    end
-                elseif type(args[1]) == "table" then
-                    -- Arguments might be in table format
-                    local data = args[1]
-                    if data.Id or data.ItemId or data.Name then
-                        local itemName = data.Name or "Unknown"
-                        local rarity = data.Rarity or "Common"
-                        local metadata = data.Metadata or data
-                        
-                        print("[Raditya] Caught:", itemName, rarity)
-                        onItemObtained(itemName, rarity, metadata)
-                    end
-                end
+            local data = {
+                ["username"] = "Fish It Bot",
+                ["avatar_url"] = "https://cdn-icons-png.flaticon.com/512/2721/2721284.png",
+                ["embeds"] = {embed}
+            }
+            
+            local success, response = pcall(function()
+                return request({
+                    Url = WEBHOOK_URL,
+                    Method = "POST",
+                    Headers = {["Content-Type"] = "application/json"},
+                    Body = HttpService:JSONEncode(data)
+                })
             end)
+            
+            if success and response and response.StatusCode and response.StatusCode >= 200 and response.StatusCode < 300 then
+                successfulWebhooks = successfulWebhooks + 1
+                WebhookStat.Text = "✅ Webhooks Sent: " .. successfulWebhooks
+                StatusStat.Text = "⚡ Status: Sent - " .. fishName
+                StatusStat.TextColor3 = Color3.fromRGB(100, 255, 150)
+            else
+                StatusStat.Text = "⚠️ Status: Failed"
+                StatusStat.TextColor3 = Color3.fromRGB(255, 150, 100)
+            end
         end)
-        return true
     end
     
-    -- Search for RemoteEvents
-    for _, remote in ipairs(ReplicatedStorage:GetDescendants()) do
-        if remote:IsA("RemoteEvent") then
-            local name = remote.Name:lower()
-            if name:find("fish") or name:find("catch") or name:find("obtain") or 
-               name:find("notification") or name:find("new") then
-                if tryHookRemote(remote) then
-                    foundRemote = true
-                    print("[Raditya] Hooked to:", remote:GetFullName())
-                end
+    -- ==================== TOGGLE FUNCTION ====================
+    ToggleButton.MouseButton1Click:Connect(function()
+        isRunning = not isRunning
+        
+        if isRunning then
+            WEBHOOK_URL = InputBox.Text
+            
+            if WEBHOOK_URL == "" or not WEBHOOK_URL:match("discord.com/api/webhooks") then
+                StatusStat.Text = "⚠️ Status: Invalid URL"
+                StatusStat.TextColor3 = Color3.fromRGB(255, 150, 100)
+                isRunning = false
+                return
             end
-        end
-    end
-    
-    -- Method 2: Monitor player inventory changes
-    task.spawn(function()
-        local lastCount = 0
-        while true do
-            task.wait(1)
-            local leaderstats = LocalPlayer:FindFirstChild("leaderstats")
-            if leaderstats then
-                local caught = leaderstats:FindFirstChild("Caught")
-                if caught and caught.Value > lastCount then
-                    lastCount = caught.Value
-                    print("[Raditya] Inventory changed! New catch detected.")
-                    -- Trigger a test notification
-                    if isWebhookEnabled then
-                        Rayfield:Notify({
-                            Title = "Fish Caught!",
-                            Content = "Detected new catch! Check webhook.",
-                            Duration = 2,
-                            Image = 4483362458
-                        })
-                    end
-                end
+            
+            -- Animate toggle ON
+            TweenService:Create(ToggleOuter, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {BackgroundColor3 = Theme.ToggleEnabled}):Play()
+            TweenService:Create(ToggleOuterStroke, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {Color = Color3.fromRGB(0, 170, 255)}):Play()
+            TweenService:Create(ToggleInner, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {Position = UDim2.new(1, -21, 0.5, -9)}):Play()
+            ToggleText.Text = "Status: Enabled"
+            ToggleText.TextColor3 = Color3.fromRGB(150, 255, 150)
+            StatusStat.Text = "⚡ Status: Monitoring..."
+            StatusStat.TextColor3 = Color3.fromRGB(150, 150, 255)
+            
+            -- Hook event
+            local eventSuccess, FishEvent = pcall(function()
+                return ReplicatedStorage.Packages._Index["sleitnick_net@0.2.0"].net["RE/ObtainedNewFishNotification"]
+            end)
+            
+            if not eventSuccess then
+                StatusStat.Text = "⚠️ Status: Event Not Found"
+                StatusStat.TextColor3 = Color3.fromRGB(255, 100, 100)
+                isRunning = false
+                TweenService:Create(ToggleOuter, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {BackgroundColor3 = Theme.ToggleDisabled}):Play()
+                TweenService:Create(ToggleOuterStroke, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {Color = Color3.fromRGB(125, 125, 125)}):Play()
+                TweenService:Create(ToggleInner, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {Position = UDim2.new(0, 3, 0.5, -9)}):Play()
+                return
             end
+            
+            local conn = FishEvent.OnClientEvent:Connect(function(fishId, metadata1, metadata2, ...)
+                local weight = nil
+                
+                if typeof(metadata1) == "table" and metadata1.Weight then
+                    weight = metadata1.Weight
+                end
+                
+                if typeof(metadata2) == "table" and metadata2.InventoryItem and metadata2.InventoryItem.Metadata then
+                    weight = metadata2.InventoryItem.Metadata.Weight or weight
+                end
+                
+                totalFishCaught = totalFishCaught + 1
+                FishStat.Text = "🐟 Fish Caught: " .. totalFishCaught
+                
+                sendWebhook(fishId, weight, metadata2)
+            end)
+            
+            table.insert(connections, conn)
+        else
+            -- Animate toggle OFF
+            TweenService:Create(ToggleOuter, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {BackgroundColor3 = Theme.ToggleDisabled}):Play()
+            TweenService:Create(ToggleOuterStroke, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {Color = Color3.fromRGB(125, 125, 125)}):Play()
+            TweenService:Create(ToggleInner, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {Position = UDim2.new(0, 3, 0.5, -9)}):Play()
+            ToggleText.Text = "Status: Disabled"
+            ToggleText.TextColor3 = Color3.fromRGB(180, 180, 180)
+            StatusStat.Text = "⚡ Status: Stopped"
+            StatusStat.TextColor3 = Theme.TextColor
+            
+            for _, conn in pairs(connections) do
+                conn:Disconnect()
+            end
+            connections = {}
         end
     end)
     
-    if not foundRemote then
-        Rayfield:Notify({
-            Title = "Debug Mode",
-            Content = "Using inventory monitor. Check console for events.",
-            Duration = 5,
-            Image = 4483362458
-        })
-    end
+    -- Entrance Animation (Rayfield style)
+    Main.Size = UDim2.new(0, 0, 0, 0)
+    TweenService:Create(Main, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 500, 0, 350)}):Play()
 end
 
--- Create UI
-local Window = Rayfield:CreateWindow({
-    Name = "Raditya Webhook",
-    LoadingTitle = "Raditya Webhook System",
-    LoadingSubtitle = "by Raditya",
-    ConfigurationSaving = {
-        Enabled = true,
-        FolderName = "RadityaWebhook",
-        FileName = "Config"
-    }
-})
-
-local MainTab = Window:CreateTab("🎣 Webhook", 4483362458)
-local SettingsTab = Window:CreateTab("⚙️ Settings", 4483362458)
-
--- Webhook URL Input
-local Section1 = MainTab:CreateSection("Webhook Configuration")
-
-local WebhookInput = MainTab:CreateInput({
-    Name = "Discord Webhook URL",
-    PlaceholderText = "https://discord.com/api/webhooks/...",
-    RemoveTextAfterFocusLost = false,
-    Callback = function(text)
-        WEBHOOK_URL = text
-    end
-})
-
--- Enable Toggle
-local EnableToggle = MainTab:CreateToggle({
-    Name = "Enable Webhook Notifications",
-    CurrentValue = false,
-    Flag = "WebhookEnabled",
-    Callback = function(value)
-        isWebhookEnabled = value
-        if value then
-            if WEBHOOK_URL == "" or not WEBHOOK_URL:find("discord.com") then
-                Rayfield:Notify({
-                    Title = "Error",
-                    Content = "Please enter a valid Discord webhook URL!",
-                    Duration = 5,
-                    Image = 4483362458
-                })
-                EnableToggle:Set(false)
-            else
-                Rayfield:Notify({
-                    Title = "Webhook Active",
-                    Content = "Notifications are now enabled!",
-                    Duration = 3,
-                    Image = 4483362458
-                })
-            end
-        end
-    end
-})
-
--- Test Button
-local TestButton = MainTab:CreateButton({
-    Name = "Test Webhook",
-    Callback = function()
-        if WEBHOOK_URL == "" then
-            Rayfield:Notify({
-                Title = "Error",
-                Content = "Enter webhook URL first!",
-                Duration = 3,
-                Image = 4483362458
-            })
-            return
-        end
-        
-        local testEmbed = {
-            title = "✅ Raditya Webhook Test",
-            description = "Webhook is working successfully!",
-            color = 0x00FF00,
-            fields = {
-                { name = "Player", value = LocalPlayer.DisplayName or LocalPlayer.Name, inline = true },
-                { name = "Status", value = "Connected", inline = true },
-            },
-            footer = {
-                text = "Raditya Webhook System"
-            }
-        }
-        
-        local success, msg = sendWebhook(WEBHOOK_URL, WEBHOOK_USERNAME, testEmbed)
-        if success then
-            Rayfield:Notify({
-                Title = "Test Successful!",
-                Content = "Check your Discord channel!",
-                Duration = 3,
-                Image = 4483362458
-            })
-        else
-            Rayfield:Notify({
-                Title = "Test Failed",
-                Content = msg or "Unknown error",
-                Duration = 5,
-                Image = 4483362458
-            })
-        end
-    end
-})
-
--- Filters Section
-local Section2 = SettingsTab:CreateSection("Notification Filters")
-
-local RarityDropdown = SettingsTab:CreateDropdown({
-    Name = "Filter by Rarity",
-    Options = RarityList,
-    CurrentOption = {},
-    MultipleOptions = true,
-    Flag = "RarityFilter",
-    Callback = function(options)
-        SelectedRarityCategories = {}
-        for _, opt in ipairs(options) do
-            table.insert(SelectedRarityCategories, opt:upper())
-        end
-    end
-})
-
-local ItemDropdown = SettingsTab:CreateDropdown({
-    Name = "Filter by Item Name",
-    Options = getItemList(),
-    CurrentOption = {},
-    MultipleOptions = true,
-    Flag = "ItemFilter",
-    Callback = function(options)
-        SelectedItemNames = options
-    end
-})
-
-local MutationToggle = SettingsTab:CreateToggle({
-    Name = "Notify on Mutations (Shiny/Variant)",
-    CurrentValue = false,
-    Flag = "MutationNotify",
-    Callback = function(value)
-        NotifyOnMutation = value
-    end
-})
-
--- Setup hooks
-setupHooks()
-
-Rayfield:Notify({
-    Title = "Raditya Webhook",
-    Content = "System loaded successfully!",
-    Duration = 3,
-    Image = 4483362458
-})
-
-print("[Raditya Webhook] Loaded successfully!")
+-- ==================== RUN ====================
+createUI()
+print("✅ Rayfield-style UI Loaded!")
