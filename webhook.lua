@@ -492,10 +492,14 @@ end)
 -- ==================== FISHING TAB ====================
 local FishingTab = Window:Tab({
     Title = "Fishing",
-    Icon = "fish"
+    Icon = "fish",
+    Locked = false,
 })
 
-local blatant = FishingTab:Section({Title = "Blatant Instant Fishing"})
+local blatant = FishingTab:Section({
+    Title = "Blatant Instant Fishing",
+    TextSize = 20,
+})
 
 blatant:Input({
     Title = "Loop Interval",
