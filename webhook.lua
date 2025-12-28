@@ -401,9 +401,15 @@ local Window = WindUI:CreateWindow({
     Author = "Raditya",
     Folder = "RadityaWebhook",
     Size = UDim2.fromOffset(600, 400),
+    MinSize = Vector2.new(560, 250),
+    MaxSize = Vector2.new(950, 760),
     Transparent = true,
     Theme = "Rose",
     Resizable = true,
+    SideBarWidth = 190,
+    BackgroundImageTransparency = 0.42,
+    HideSearchBar = true,
+    ScrollBarEnabled = true,
 })
 
 -- ==================== WEBHOOK TAB ====================
