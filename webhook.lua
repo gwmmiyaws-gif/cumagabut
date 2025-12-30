@@ -396,7 +396,7 @@ end
 
 -- ==================== CREATE WINDUI ====================
 local Window = WindUI:CreateWindow({
-    Title = "Fish It Webhook + Fishing",
+    Title = "Raditya Webhook + Fishing",
     Icon = "rbxassetid://116236936447443",
     Author = "Raditya",
     Folder = "RadityaWebhook",
@@ -407,20 +407,16 @@ local Window = WindUI:CreateWindow({
     Theme = "Rose",
     Resizable = true,
     SideBarWidth = 190,
-    BackgroundImageTransparency = 0.42,
-    HideSearchBar = true,
-    ScrollBarEnabled = true,
 })
 
 -- ==================== WEBHOOK TAB ====================
 local WebhookTab = Window:Tab({
     Title = "Webhook",
-    Icon = "send"
+    Icon = "send",
 })
 
 local webhooksec = WebhookTab:Section({
     Title = "Webhook Setup",
-    TextSize = 20,
 })
 
 webhooksec:Input({
@@ -482,16 +478,18 @@ webhooksec:Button({
     end
 })
 
--- Stats
+-- Stats (FIXED)
 local StatsSection = WebhookTab:Section({Title = "Statistics"})
-local fishLabel = StatsSection:Label({Title = "Fish Caught", Description = "0"})
-local webhookLabel = StatsSection:Label({Title = "Webhooks Sent", Description = "0"})
+local fishLabel = StatsSection:Paragraph({Title = "Fish Caught: 0", Content = ""})
+local webhookLabel = StatsSection:Paragraph({Title = "Webhooks Sent: 0", Content = ""})
 
 task.spawn(function()
     while true do
         task.wait(1)
-        fishLabel:Set(tostring(totalFishCaught))
-        webhookLabel:Set(tostring(successfulWebhooks))
+        pcall(function()
+            fishLabel:SetTitle("Fish Caught: " .. tostring(totalFishCaught))
+            webhookLabel:SetTitle("Webhooks Sent: " .. tostring(successfulWebhooks))
+        end)
     end
 end)
 
@@ -499,12 +497,10 @@ end)
 local FishingTab = Window:Tab({
     Title = "Fishing",
     Icon = "fish",
-    Locked = false,
 })
 
 local blatant = FishingTab:Section({
     Title = "Blatant Instant Fishing",
-    TextSize = 20,
 })
 
 blatant:Input({
