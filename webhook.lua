@@ -1,9 +1,9 @@
 -- ==================== FISH IT WEBHOOK BY RADITYA ====================
--- Delta Executor (Android) Compatible Version
--- Updated for Mobile Compatibility
+-- Delta Executor (Android) Compatible Version - FIXED
+-- Performance Monitor + Fixed Blatant Fishing
 
 print("=" .. string.rep("=", 50))
-print("🎣 Webhook By Raditya Loaded! (Delta Compatible)")
+print("🎣 Webhook By Raditya Loaded! (Delta Fixed)")
 print("=" .. string.rep("=", 50))
 
 -- Load WindUI
@@ -13,15 +13,15 @@ local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local Stats = game:GetService("Stats")
 
 -- ==================== MOBILE COMPATIBILITY LAYER ====================
--- Delta Executor compatibility functions
 local function isMobileExecutor()
     return identifyexecutor and (identifyexecutor():lower():find("delta") or identifyexecutor():lower():find("mobile"))
 end
 
 local function mobileRequest(options)
-    -- Delta uses http_request or request
     local requestFunc = http_request or request or syn and syn.request
     
     if not requestFunc then
@@ -41,7 +41,6 @@ local function mobileRequest(options)
 end
 
 local function safeGetMetatable()
-    -- Mobile-safe metatable access
     local success, mt = pcall(function()
         return getrawmetatable(game)
     end)
@@ -49,12 +48,7 @@ local function safeGetMetatable()
 end
 
 local function safeSetReadonly(tbl, state)
-    local funcs = {
-        setreadonly,
-        make_writeable,
-        makewriteable,
-    }
-    
+    local funcs = {setreadonly, make_writeable, makewriteable}
     for _, func in ipairs(funcs) do
         if func then
             pcall(function() func(tbl, state) end)
@@ -65,26 +59,21 @@ local function safeSetReadonly(tbl, state)
 end
 
 local function safeNewCClosure(func)
-    -- Try multiple newcclosure alternatives
     local closureFuncs = {newcclosure, newlclosure}
-    
     for _, closureFunc in ipairs(closureFuncs) do
         if closureFunc then
             local success, result = pcall(closureFunc, func)
             if success then return result end
         end
     end
-    
-    -- Fallback to raw function
     return func
 end
 
 local function safeCheckCaller()
-    -- Try multiple checkcaller alternatives
     if checkcaller then return checkcaller() end
     if is_protosmasher_caller then return is_protosmasher_caller() end
     if get_calling_script then return get_calling_script() == nil end
-    return true -- Fallback
+    return true
 end
 
 -- ==================== LOAD CRITICAL MODULES ====================
@@ -119,18 +108,47 @@ local SelectedRarityCategories = {}
 local SelectedWebhookItemNames = {}
 local ImageURLCache = {}
 
--- Blatant Fishing
+-- Blatant Fishing - FIXED TIMING
 local blatantInstantState = false
 local blatantLoopThread = nil
 local blatantEquipThread = nil
-local completeDelay = 3.055
-local cancelDelay = 0.3
-local loopInterval = 1.715
+local isFishingInProgress = false
+local completeDelay = 0.1  -- FIXED: Reduced delay
+local cancelDelay = 0.05   -- FIXED: Faster cancel
+local loopInterval = 0.3   -- FIXED: Faster loop
 _G.RockHub_BlatantActive = false
 
 -- Stats
 local totalFishCaught = 0
 local successfulWebhooks = 0
+
+-- Performance Stats - REAL TIME
+local performanceStats = {
+    fps = 0,
+    ping = 0,
+    lastUpdate = 0
+}
+
+-- ==================== PERFORMANCE MONITOR (REAL) ====================
+task.spawn(function()
+    while true do
+        local now = os.clock()
+        if now - performanceStats.lastUpdate >= 0.5 then
+            -- REAL FPS from workspace physics
+            performanceStats.fps = math.floor(workspace:GetRealPhysicsFPS())
+            
+            -- REAL PING from network stats
+            local networkStats = Stats.Network.ServerStatsItem
+            local pingValue = networkStats["Data Ping"]
+            if pingValue then
+                performanceStats.ping = math.floor(pingValue:GetValue())
+            end
+            
+            performanceStats.lastUpdate = now
+        end
+        task.wait(0.1)
+    end
+end)
 
 -- ==================== HELPER FUNCTIONS ====================
 local function FormatNumber(n)
@@ -227,7 +245,7 @@ local function getWebhookItemOptions()
     return itemNames
 end
 
--- ==================== WEBHOOK SYSTEM (DELTA COMPATIBLE) ====================
+-- ==================== WEBHOOK SYSTEM ====================
 local function sendExploitWebhook(url, username, embed_data)
     local payload = {
         username = username,
@@ -235,8 +253,6 @@ local function sendExploitWebhook(url, username, embed_data)
     }
     
     local json_data = HttpService:JSONEncode(payload)
-    
-    -- Use mobile-compatible request
     local response = mobileRequest({
         Url = url,
         Method = "POST",
@@ -351,7 +367,7 @@ if REObtainedNewFishNotification then
     end)
 end
 
--- ==================== BLATANT FISHING SYSTEM (DELTA COMPATIBLE) ====================
+-- ==================== BLATANT FISHING SYSTEM - FIXED ====================
 -- Logic Killer
 task.spawn(function()
     local S1, FishingController = pcall(function() 
@@ -372,7 +388,7 @@ task.spawn(function()
     end
 end)
 
--- Remote Killer (Delta Compatible)
+-- Remote Killer
 task.spawn(function()
     local mt = safeGetMetatable()
     if not mt then 
@@ -423,7 +439,6 @@ local function SuppressGameVisuals(active)
 
     if active then
         task.spawn(function()
-            local RunService = game:GetService("RunService")
             local CollectionService = game:GetService("CollectionService")
             local PlayerGui = LocalPlayer.PlayerGui
             
@@ -454,29 +469,58 @@ local function SuppressGameVisuals(active)
     end
 end
 
+-- FIXED: Instant fishing with proper sequencing
 local function runBlatantInstant()
-    if not blatantInstantState then return end
-
+    if not blatantInstantState or isFishingInProgress then return end
+    
+    isFishingInProgress = true
+    
     task.spawn(function()
-        local startTime = os.clock()
         local timestamp = os.time() + os.clock()
         
-        pcall(function() RF_ChargeFishingRod:InvokeServer(timestamp) end)
-        task.wait(0.001)
-        pcall(function() RF_RequestFishingMinigameStarted:InvokeServer(-139.6379699707, 0.99647927980797) end)
+        -- Step 1: Charge rod
+        local chargeSuccess = pcall(function() 
+            RF_ChargeFishingRod:InvokeServer(timestamp) 
+        end)
         
-        local completeWaitTime = completeDelay - (os.clock() - startTime)
-        if completeWaitTime > 0 then task.wait(completeWaitTime) end
+        if not chargeSuccess then
+            isFishingInProgress = false
+            return
+        end
         
-        pcall(function() RE_FishingCompleted:FireServer() end)
+        task.wait(0.01)
+        
+        -- Step 2: Start minigame
+        local minigameSuccess = pcall(function() 
+            RF_RequestFishingMinigameStarted:InvokeServer(-139.6379699707, 0.99647927980797) 
+        end)
+        
+        if not minigameSuccess then
+            isFishingInProgress = false
+            return
+        end
+        
+        task.wait(completeDelay)
+        
+        -- Step 3: Complete fishing
+        pcall(function() 
+            RE_FishingCompleted:FireServer() 
+        end)
+        
         task.wait(cancelDelay)
-        pcall(function() RF_CancelFishingInputs:InvokeServer() end)
+        
+        -- Step 4: Cancel/reset
+        pcall(function() 
+            RF_CancelFishingInputs:InvokeServer() 
+        end)
+        
+        isFishingInProgress = false
     end)
 end
 
 -- ==================== CREATE WINDUI ====================
 local Window = WindUI:CreateWindow({
-    Title = "Raditya Webhook + Fishing (Delta)",
+    Title = "Raditya Webhook + Fishing (Fixed)",
     Icon = "rbxassetid://116236936447443",
     Author = "Raditya",
     Folder = "RadityaWebhook",
@@ -489,7 +533,6 @@ local Window = WindUI:CreateWindow({
     SideBarWidth = 190,
 })
 
--- Display executor info
 if isMobileExecutor() then
     print("✅ Delta Mobile Executor detected!")
 end
@@ -553,17 +596,16 @@ webhooksec:Button({
             return
         end
         local testEmbed = {
-            title = "🎣 Raditya Webhook Test (Delta)",
+            title = "🎣 Raditya Webhook Test (Fixed)",
             description = "Success from Delta Executor!",
             color = 0x00FF00,
-            footer = {text = "Webhook By Raditya - Delta Compatible"}
+            footer = {text = "Webhook By Raditya - Fixed Version"}
         }
         sendExploitWebhook(WEBHOOK_URL, WEBHOOK_USERNAME, testEmbed)
         WindUI:Notify({Title = "Test Sent!", Duration = 3})
     end
 })
 
--- Stats
 local StatsSection = WebhookTab:Section({Title = "Statistics"})
 local fishLabel = StatsSection:Paragraph({Title = "Fish Caught: 0", Content = ""})
 local webhookLabel = StatsSection:Paragraph({Title = "Webhooks Sent: 0", Content = ""})
@@ -585,36 +627,36 @@ local FishingTab = Window:Tab({
 })
 
 local blatant = FishingTab:Section({
-    Title = "Blatant Instant Fishing",
+    Title = "Blatant Instant Fishing (FIXED)",
 })
 
 blatant:Input({
-    Title = "Loop Interval",
+    Title = "Loop Interval (seconds)",
     Value = tostring(loopInterval),
-    Placeholder = "1.715",
-    Callback = function(input)
-        local val = tonumber(input)
-        if val and val >= 0.5 then loopInterval = val end
-    end
-})
-
-blatant:Input({
-    Title = "Complete Delay",
-    Value = tostring(completeDelay),
-    Placeholder = "3.055",
-    Callback = function(input)
-        local val = tonumber(input)
-        if val and val >= 0.5 then completeDelay = val end
-    end
-})
-
-blatant:Input({
-    Title = "Cancel Delay",
-    Value = tostring(cancelDelay),
     Placeholder = "0.3",
     Callback = function(input)
         local val = tonumber(input)
-        if val and val >= 0.1 then cancelDelay = val end
+        if val and val >= 0.1 then loopInterval = val end
+    end
+})
+
+blatant:Input({
+    Title = "Complete Delay (seconds)",
+    Value = tostring(completeDelay),
+    Placeholder = "0.1",
+    Callback = function(input)
+        local val = tonumber(input)
+        if val and val >= 0.05 then completeDelay = val end
+    end
+})
+
+blatant:Input({
+    Title = "Cancel Delay (seconds)",
+    Value = tostring(cancelDelay),
+    Placeholder = "0.05",
+    Callback = function(input)
+        local val = tonumber(input)
+        if val and val >= 0.01 then cancelDelay = val end
     end
 })
 
@@ -645,7 +687,7 @@ blatant:Toggle({
             blatantEquipThread = task.spawn(function()
                 while blatantInstantState do
                     pcall(function() RE_EquipToolFromHotbar:FireServer(1) end)
-                    task.wait(0.1)
+                    task.wait(0.5)
                 end
             end)
             
@@ -656,31 +698,70 @@ blatant:Toggle({
             end
             if blatantLoopThread then task.cancel(blatantLoopThread) blatantLoopThread = nil end
             if blatantEquipThread then task.cancel(blatantEquipThread) blatantEquipThread = nil end
+            isFishingInProgress = false
             WindUI:Notify({Title = "Stopped", Duration = 2})
         end
     end
 })
 
--- ==================== INFO TAB (DELTA) ====================
-local InfoTab = Window:Tab({
-    Title = "Info",
-    Icon = "info",
+-- ==================== PERFORMANCE TAB (REAL STATS) ====================
+local PerformanceTab = Window:Tab({
+    Title = "Performance",
+    Icon = "activity",
 })
 
-local infoSec = InfoTab:Section({Title = "Delta Compatibility"})
-infoSec:Paragraph({
-    Title = "Delta Executor Ready ✅",
-    Content = "This script is optimized for Delta Executor on Android devices. All mobile-specific functions are handled automatically."
+local perfSec = PerformanceTab:Section({
+    Title = "Real-Time Performance Monitor",
 })
 
-infoSec:Paragraph({
-    Title = "Features",
-    Content = "• Mobile-compatible webhook system\n• Auto-detection of executor environment\n• Fallback functions for stability\n• Optimized for touch controls"
+local fpsLabel = perfSec:Paragraph({
+    Title = "FPS: Calculating...",
+    Content = "Real-time frames per second"
 })
 
-print("✅ Raditya Webhook + Fishing System Loaded! (Delta Compatible)")
+local pingLabel = perfSec:Paragraph({
+    Title = "Ping: Calculating...",
+    Content = "Network latency in milliseconds"
+})
+
+-- Real-time update loop
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        pcall(function()
+            local fps = performanceStats.fps
+            local ping = performanceStats.ping
+            
+            -- Color coding for FPS
+            local fpsStatus = "🟢"
+            if fps < 30 then
+                fpsStatus = "🔴"
+            elseif fps < 50 then
+                fpsStatus = "🟡"
+            end
+            
+            -- Color coding for Ping
+            local pingStatus = "🟢"
+            if ping > 200 then
+                pingStatus = "🔴"
+            elseif ping > 100 then
+                pingStatus = "🟡"
+            end
+            
+            fpsLabel:SetTitle(string.format("%s FPS: %d", fpsStatus, fps))
+            pingLabel:SetTitle(string.format("%s Ping: %d ms", pingStatus, ping))
+        end)
+    end
+end)
+
+perfSec:Paragraph({
+    Title = "Performance Guide",
+    Content = "🟢 Good • 🟡 Medium • 🔴 Poor\n\nFPS: 60+ (Good), 30-59 (Medium), <30 (Poor)\nPing: <100ms (Good), 100-200ms (Medium), >200ms (Poor)"
+})
+
+print("✅ Raditya Webhook + Fishing System Loaded! (FIXED)")
 WindUI:Notify({
     Title = "Raditya Script Loaded",
-    Content = "Delta-Compatible Version Ready!",
+    Content = "Fixed Version with Performance Monitor!",
     Duration = 5
 })
