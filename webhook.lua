@@ -704,27 +704,247 @@ blatant:Toggle({
     end
 })
 
--- ==================== PERFORMANCE TAB (REAL STATS) ====================
+-- ==================== MISC TAB ====================
+local MiscTab = Window:Tab({
+    Title = "Misc",
+    Icon = "settings",
+})
+
+local miscSec = MiscTab:Section({
+    Title = "Miscellaneous Features",
+})
+
+-- FPS Overlay Variables
+local fpsOverlayEnabled = false
+local fpsOverlayGui = nil
+
+local function createFPSOverlay()
+    -- Remove old overlay if exists
+    if fpsOverlayGui then
+        fpsOverlayGui:Destroy()
+        fpsOverlayGui = nil
+    end
+    
+    -- Create ScreenGui
+    fpsOverlayGui = Instance.new("ScreenGui")
+    fpsOverlayGui.Name = "RadityaFPSOverlay"
+    fpsOverlayGui.ResetOnSpawn = false
+    fpsOverlayGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    
+    -- Create Frame background
+    local frame = Instance.new("Frame")
+    frame.Name = "FPSFrame"
+    frame.Size = UDim2.new(0, 200, 0, 80)
+    frame.Position = UDim2.new(0, 10, 0, 10)
+    frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    frame.BackgroundTransparency = 0.3
+    frame.BorderSizePixel = 0
+    frame.Parent = fpsOverlayGui
+    
+    -- Add UICorner
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = frame
+    
+    -- Add UIStroke
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(255, 105, 180)
+    stroke.Thickness = 2
+    stroke.Transparency = 0.5
+    stroke.Parent = frame
+    
+    -- FPS Label
+    local fpsLabel = Instance.new("TextLabel")
+    fpsLabel.Name = "FPSLabel"
+    fpsLabel.Size = UDim2.new(1, -10, 0, 30)
+    fpsLabel.Position = UDim2.new(0, 5, 0, 5)
+    fpsLabel.BackgroundTransparency = 1
+    fpsLabel.Text = "FPS: --"
+    fpsLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    fpsLabel.TextSize = 20
+    fpsLabel.Font = Enum.Font.GothamBold
+    fpsLabel.TextXAlignment = Enum.TextXAlignment.Left
+    fpsLabel.Parent = frame
+    
+    -- Ping Label
+    local pingLabel = Instance.new("TextLabel")
+    pingLabel.Name = "PingLabel"
+    pingLabel.Size = UDim2.new(1, -10, 0, 30)
+    pingLabel.Position = UDim2.new(0, 5, 0, 40)
+    pingLabel.BackgroundTransparency = 1
+    pingLabel.Text = "Ping: --"
+    pingLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    pingLabel.TextSize = 20
+    pingLabel.Font = Enum.Font.GothamBold
+    pingLabel.TextXAlignment = Enum.TextXAlignment.Left
+    pingLabel.Parent = frame
+    
+    -- Parent to CoreGui or PlayerGui
+    local success = pcall(function()
+        fpsOverlayGui.Parent = game:GetService("CoreGui")
+    end)
+    
+    if not success then
+        fpsOverlayGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+    end
+    
+    -- Update loop
+    task.spawn(function()
+        while fpsOverlayEnabled and fpsOverlayGui do
+            task.wait(0.5)
+            
+            if not fpsOverlayGui or not fpsOverlayGui.Parent then break end
+            
+            local fps = performanceStats.fps
+            local ping = performanceStats.ping
+            
+            -- Update FPS with color
+            local fpsColor = Color3.fromRGB(0, 255, 0) -- Green
+            if fps < 30 then
+                fpsColor = Color3.fromRGB(255, 0, 0) -- Red
+            elseif fps < 50 then
+                fpsColor = Color3.fromRGB(255, 255, 0) -- Yellow
+            end
+            
+            fpsLabel.Text = string.format("FPS: %d", fps)
+            fpsLabel.TextColor3 = fpsColor
+            
+            -- Update Ping with color
+            local pingColor = Color3.fromRGB(0, 255, 0) -- Green
+            if ping > 200 then
+                pingColor = Color3.fromRGB(255, 0, 0) -- Red
+            elseif ping > 100 then
+                pingColor = Color3.fromRGB(255, 255, 0) -- Yellow
+            end
+            
+            pingLabel.Text = string.format("Ping: %d ms", ping)
+            pingLabel.TextColor3 = pingColor
+        end
+    end)
+end
+
+local function removeFPSOverlay()
+    if fpsOverlayGui then
+        fpsOverlayGui:Destroy()
+        fpsOverlayGui = nil
+    end
+end
+
+-- FPS Overlay Toggle
+miscSec:Toggle({
+    Title = "Show FPS & Ping",
+    Description = "Display real-time FPS and Ping on screen",
+    Value = false,
+    Callback = function(state)
+        fpsOverlayEnabled = state
+        if state then
+            createFPSOverlay()
+            WindUI:Notify({Title = "FPS Overlay ON", Content = "Real-time stats displayed!", Duration = 3, Icon = "eye"})
+        else
+            removeFPSOverlay()
+            WindUI:Notify({Title = "FPS Overlay OFF", Duration = 2, Icon = "eye-off"})
+        end
+    end
+})
+
+-- Anti-AFK
+local antiAFKEnabled = false
+local antiAFKConnection = nil
+
+miscSec:Toggle({
+    Title = "Anti-AFK",
+    Description = "Prevent being kicked for inactivity",
+    Value = false,
+    Callback = function(state)
+        antiAFKEnabled = state
+        
+        if state then
+            local VirtualUser = game:GetService("VirtualUser")
+            antiAFKConnection = LocalPlayer.Idled:Connect(function()
+                VirtualUser:CaptureController()
+                VirtualUser:ClickButton2(Vector2.new())
+            end)
+            WindUI:Notify({Title = "Anti-AFK ON", Duration = 3, Icon = "shield"})
+        else
+            if antiAFKConnection then
+                antiAFKConnection:Disconnect()
+                antiAFKConnection = nil
+            end
+            WindUI:Notify({Title = "Anti-AFK OFF", Duration = 2, Icon = "shield-off"})
+        end
+    end
+})
+
+-- Auto Reconnect
+miscSec:Toggle({
+    Title = "Auto Reconnect",
+    Description = "Automatically rejoin if disconnected",
+    Value = false,
+    Callback = function(state)
+        if state then
+            task.spawn(function()
+                local TeleportService = game:GetService("TeleportService")
+                local CoreGui = game:GetService("CoreGui")
+                
+                -- Monitor for disconnect prompts
+                local function checkForDisconnect()
+                    local success = pcall(function()
+                        CoreGui.RobloxPromptGui.promptOverlay.ChildAdded:Connect(function(child)
+                            if child.Name == 'ErrorPrompt' and child:FindFirstChild("MessageArea") then
+                                task.wait(0.5)
+                                TeleportService:Teleport(game.PlaceId, LocalPlayer)
+                            end
+                        end)
+                    end)
+                    
+                    if not success then
+                        -- Fallback method
+                        game:GetService("GuiService").ErrorMessageChanged:Connect(function()
+                            task.wait(1)
+                            TeleportService:Teleport(game.PlaceId, LocalPlayer)
+                        end)
+                    end
+                end
+                
+                checkForDisconnect()
+            end)
+            WindUI:Notify({Title = "Auto Reconnect ON", Duration = 3, Icon = "refresh-cw"})
+        else
+            WindUI:Notify({Title = "Auto Reconnect OFF", Content = "Restart script to disable", Duration = 3, Icon = "x"})
+        end
+    end
+})
+
+miscSec:Button({
+    Title = "Rejoin Server",
+    Description = "Manually rejoin current server",
+    Icon = "repeat",
+    Callback = function()
+        game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+    end
+})
+
+-- ==================== PERFORMANCE TAB (INFO ONLY) ====================
 local PerformanceTab = Window:Tab({
-    Title = "Performance",
-    Icon = "activity",
+    Title = "Info",
+    Icon = "info",
 })
 
 local perfSec = PerformanceTab:Section({
-    Title = "Real-Time Performance Monitor",
+    Title = "Performance Information",
 })
 
-local fpsLabel = perfSec:Paragraph({
+local fpsInfoLabel = perfSec:Paragraph({
     Title = "FPS: Calculating...",
     Content = "Real-time frames per second"
 })
 
-local pingLabel = perfSec:Paragraph({
+local pingInfoLabel = perfSec:Paragraph({
     Title = "Ping: Calculating...",
     Content = "Network latency in milliseconds"
 })
 
--- Real-time update loop
+-- Real-time update loop for info tab
 task.spawn(function()
     while true do
         task.wait(0.5)
@@ -748,8 +968,8 @@ task.spawn(function()
                 pingStatus = "🟡"
             end
             
-            fpsLabel:SetTitle(string.format("%s FPS: %d", fpsStatus, fps))
-            pingLabel:SetTitle(string.format("%s Ping: %d ms", pingStatus, ping))
+            fpsInfoLabel:SetTitle(string.format("%s FPS: %d", fpsStatus, fps))
+            pingInfoLabel:SetTitle(string.format("%s Ping: %d ms", pingStatus, ping))
         end)
     end
 end)
@@ -757,6 +977,11 @@ end)
 perfSec:Paragraph({
     Title = "Performance Guide",
     Content = "🟢 Good • 🟡 Medium • 🔴 Poor\n\nFPS: 60+ (Good), 30-59 (Medium), <30 (Poor)\nPing: <100ms (Good), 100-200ms (Medium), >200ms (Poor)"
+})
+
+perfSec:Paragraph({
+    Title = "Delta Compatibility",
+    Content = "This script is optimized for Delta Executor on Android devices. All mobile-specific functions are handled automatically."
 })
 
 print("✅ Raditya Webhook + Fishing System Loaded! (FIXED)")
