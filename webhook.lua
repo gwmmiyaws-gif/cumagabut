@@ -1,9 +1,9 @@
 -- ==================== FISH IT WEBHOOK BY RADITYA ====================
--- Delta Executor (Android) Compatible Version - v3.2 SIMPLE BLATANT
--- Enhanced Webhook + Disconnect Monitor + Simple RockHub Blatant
+-- Delta Executor (Android) Compatible Version - v3.3 SKIN-BASED DELAYS
+-- Enhanced Webhook + Disconnect Monitor + Skin-Aware Blatant
 
 print("=" .. string.rep("=", 50))
-print("🎣 Webhook By Raditya Loaded! (v3.2 + Simple Blatant)")
+print("🎣 Webhook By Raditya Loaded! (v3.3 + Skin Delays)")
 print("=" .. string.rep("=", 50))
 
 -- Load WindUI
@@ -19,7 +19,7 @@ local TeleportService = game:GetService("TeleportService")
 local GuiService = game:GetService("GuiService")
 
 -- ==================== CONFIG FILE PATH ====================
-local CONFIG_FILE = "RadityaWebhook_Config_v3.2.json"
+local CONFIG_FILE = "RadityaWebhook_Config_v3.3.json"
 
 -- ==================== MOBILE COMPATIBILITY LAYER ====================
 local function isMobileExecutor()
@@ -149,22 +149,41 @@ local Remotes = {
 local WEBHOOK_URL = ""
 local DISCONNECT_WEBHOOK_URL = ""
 local DISCORD_USER_ID = ""
-local WEBHOOK_USERNAME = "Raditya Fish Notify v3.2"
+local WEBHOOK_USERNAME = "Raditya Fish Notify v3.3"
 local isWebhookEnabled = false
 local isDisconnectWebhookEnabled = false
 local SelectedRarityCategories = {}
 local SelectedWebhookItemNames = {}
 local ImageURLCache = {}
 
--- Simple Blatant Fishing Configuration
+-- Skin-Based Blatant Fishing Configuration
 local blatantInstantState = false
 local blatantLoopThread = nil
 local blatantEquipThread = nil
 local isFishingInProgress = false
 
--- SIMPLE DELAYS - ONLY 2 SETTINGS
-local delayBait = 0.5      -- Delay after baiting (sebelum cast)
-local delayCast = 0.3      -- Delay setelah cast (sebelum loop lagi)
+-- ROD SKIN DELAYS DATABASE
+local RodSkinDelays = {
+    ["Holy Trident"] = {bobber = 0.5, catch = 0.2},
+    ["Soul Scythe"] = {bobber = 0.4, catch = 0.2},
+    ["Candy Cane Trident"] = {bobber = 0.4, catch = 0.2},
+    ["The Vanquisher"] = {bobber = 0.3, catch = 0.2},
+    ["Eclipse Katana"] = {bobber = 0.2, catch = 0.2},
+    ["Princess Parasol"] = {bobber = 0.22, catch = 0.2},
+    ["Christmas Parasol"] = {bobber = 0.22, catch = 0.2},
+    ["Frozen Krampus Scythe"] = {bobber = 0.3, catch = 0.1},
+    ["GingerBread Katana"] = {bobber = 0.2, catch = 0.2},
+    ["Eternal Flower"] = {bobber = 0.2, catch = 0.2},
+    ["Blackhole Sword"] = {bobber = 0.1, catch = 0.1},
+    ["Ethereal Sword"] = {bobber = 0.1, catch = 0.1},
+    -- Default for unknown rods
+    ["Default"] = {bobber = 0.3, catch = 0.2}
+}
+
+-- Current selected delays
+local selectedSkin = "Default"
+local bobberAnimationDelay = 0.3
+local catchAnimationDelay = 0.2
 
 _G.RockHub_BlatantActive = false
 
@@ -196,10 +215,11 @@ local function SaveConfig()
         selectedRarities = SelectedRarityCategories,
         selectedFishNames = SelectedWebhookItemNames,
         blatantSettings = {
-            delayBait = delayBait,
-            delayCast = delayCast
+            selectedSkin = selectedSkin,
+            bobberDelay = bobberAnimationDelay,
+            catchDelay = catchAnimationDelay
         },
-        version = "3.2"
+        version = "3.3"
     }
     
     local success, encoded = pcall(function()
@@ -238,13 +258,15 @@ local function LoadConfig()
         
         -- Load blatant settings
         if result.blatantSettings then
-            delayBait = result.blatantSettings.delayBait or 0.5
-            delayCast = result.blatantSettings.delayCast or 0.3
+            selectedSkin = result.blatantSettings.selectedSkin or "Default"
+            bobberAnimationDelay = result.blatantSettings.bobberDelay or 0.3
+            catchAnimationDelay = result.blatantSettings.catchDelay or 0.2
         end
         
         print("✅ Config loaded successfully")
         print("📨 Fish Webhook:", WEBHOOK_URL ~= "" and "Set" or "Empty")
         print("🔔 Disconnect Webhook:", DISCONNECT_WEBHOOK_URL ~= "" and "Set" or "Empty")
+        print("🎣 Rod Skin:", selectedSkin)
         
         return true
     else
@@ -507,7 +529,7 @@ local function SendDisconnectWebhook(reason)
             url = "https://media.tenor.com/rx88bhLtmyUAAAAi/gawr-gura.gif"
         },
         footer = {
-            text = "Raditya Disconnect Monitor v3.2",
+            text = "Raditya Disconnect Monitor v3.3",
             icon_url = "https://i.imgur.com/WltO8IG.png"
         },
         timestamp = os.date("!%Y-%m-%dT%H:%M:%S")
@@ -619,7 +641,7 @@ local function onFishObtained(itemId, metadata, fullData)
                 },
                 thumbnail = {url = imageUrl},
                 footer = {
-                    text = string.format("Raditya Webhook v3.2 • Total: %s • %s", 
+                    text = string.format("Raditya Webhook v3.3 • Total: %s • %s", 
                         caughtDisplay, os.date("%Y-%m-%d %H:%M:%S"))
                 },
                 timestamp = os.date("!%Y-%m-%dT%H:%M:%S")
@@ -654,7 +676,7 @@ if Remotes.ObtainedNewFishNotification then
     end)
 end
 
--- ==================== SIMPLE BLATANT FISHING SYSTEM ====================
+-- ==================== SKIN-BASED BLATANT FISHING SYSTEM ====================
 -- Logic Killer
 task.spawn(function()
     local success, FishingController = pcall(function() 
@@ -672,12 +694,12 @@ task.spawn(function()
         
         FishingController.SendFishingRequestToServer = function(...)
             if _G.RockHub_BlatantActive then 
-                return false, "Blocked by RockHub Simple" 
+                return false, "Blocked by RockHub Skin-Based" 
             end
             return Old_Cast(...)
         end
         
-        print("✅ Fishing Controller hooked (Simple)")
+        print("✅ Fishing Controller hooked (Skin-Based)")
     end
 end)
 
@@ -685,7 +707,7 @@ end)
 task.spawn(function()
     local mt = safeGetMetatable()
     if not mt then 
-        warn("[Simple Blatant] Metatable hook disabled")
+        warn("[Skin-Based] Metatable hook disabled")
         return 
     end
     
@@ -713,7 +735,7 @@ task.spawn(function()
     end)
     
     safeSetReadonly(mt, true)
-    print("✅ Namecall hook installed (Simple)")
+    print("✅ Namecall hook installed (Skin-Based)")
 end)
 
 -- Visual Suppressor
@@ -775,8 +797,8 @@ local function SuppressGameVisuals(active)
     end
 end
 
--- SIMPLE: Hanya 2 delay - Bait dan Cast
-local function runSimpleBlatant()
+-- SKIN-BASED: Using animation delays
+local function runSkinBasedBlatant()
     if not blatantInstantState or isFishingInProgress then return end
     
     isFishingInProgress = true
@@ -785,13 +807,13 @@ local function runSimpleBlatant()
         local success = pcall(function()
             local timestamp = os.time() + os.clock()
             
-            -- Step 1: Bait (Charge Rod)
+            -- Step 1: Charge Rod (Throw Bait)
             if Remotes.ChargeFishingRod then
                 Remotes.ChargeFishingRod:InvokeServer(timestamp)
             end
             
-            -- Delay Bait (tunggu sebelum cast)
-            task.wait(delayBait)
+            -- Wait for Bobber Animation (skin-specific)
+            task.wait(bobberAnimationDelay)
             
             -- Step 2: Cast (Start Minigame)
             if Remotes.RequestFishingMinigameStarted then
@@ -808,12 +830,12 @@ local function runSimpleBlatant()
                 Remotes.CancelFishingInputs:InvokeServer()
             end
             
-            -- Delay Cast (tunggu sebelum loop lagi)
-            task.wait(delayCast)
+            -- Wait for Catch Animation (skin-specific)
+            task.wait(catchAnimationDelay)
         end)
         
         if not success then
-            warn("[Simple Blatant] Cycle failed")
+            warn("[Skin-Based Blatant] Cycle failed")
         end
         
         isFishingInProgress = false
@@ -824,11 +846,11 @@ end
 LoadConfig()
 
 local Window = WindUI:CreateWindow({
-    Title = "Raditya Webhook v3.2 (Simple Blatant)",
+    Title = "Raditya Webhook v3.3 (Skin Delays)",
     Icon = "rbxassetid://116236936447443",
-    Author = "Raditya (2 Delays Only)",
-    Folder = "RadityaWebhookV32",
-    Size = UDim2.fromOffset(640, 480),
+    Author = "Raditya (Skin-Aware)",
+    Folder = "RadityaWebhookV33",
+    Size = UDim2.fromOffset(660, 520),
     MinSize = Vector2.new(560, 250),
     MaxSize = Vector2.new(950, 760),
     Transparent = true,
@@ -928,15 +950,15 @@ webhooksec:Button({
         end
         
         local testEmbed = {
-            title = "🎣 Raditya Fish Webhook Test (v3.2)",
-            description = "Test successful! Simple 2-Delay Blatant!",
+            title = "🎣 Raditya Fish Webhook Test (v3.3)",
+            description = "Test successful! Skin-Based Delays!",
             color = 0x00FF00,
             fields = {
                 {name = "Executor", value = identifyexecutor and identifyexecutor() or "Unknown", inline = true},
                 {name = "User", value = LocalPlayer.Name, inline = true},
-                {name = "FPS", value = tostring(performanceStats.fps), inline = true}
+                {name = "Rod Skin", value = selectedSkin, inline = true}
             },
-            footer = {text = "Raditya Webhook v3.2 - Simple Blatant"},
+            footer = {text = "Raditya Webhook v3.3 - Skin-Based"},
             timestamp = os.date("!%Y-%m-%dT%H:%M:%S")
         }
         
@@ -1062,58 +1084,102 @@ local FishingTab = Window:Tab({
 })
 
 local blatant = FishingTab:Section({
-    Title = "Simple Blatant Fishing (2 Delays)",
-    Description = "Easy to configure - only bait & cast delays"
+    Title = "Skin-Based Blatant Fishing",
+    Description = "Automatic delays based on rod skin"
+})
+
+-- Get rod skin names for dropdown
+local rodSkinNames = {}
+for skinName, _ in pairs(RodSkinDelays) do
+    if skinName ~= "Default" then
+        table.insert(rodSkinNames, skinName)
+    end
+end
+table.sort(rodSkinNames)
+table.insert(rodSkinNames, 1, "Default")
+table.insert(rodSkinNames, "Custom (Manual)")
+
+blatant:Dropdown({
+    Title = "🎣 Select Rod Skin",
+    Description = "Choose your rod skin for optimal delays",
+    Values = rodSkinNames,
+    Default = selectedSkin,
+    Callback = function(skin)
+        selectedSkin = skin
+        
+        if skin == "Custom (Manual)" then
+            -- Keep current delays
+            print("Custom mode - use manual delays below")
+        elseif RodSkinDelays[skin] then
+            bobberAnimationDelay = RodSkinDelays[skin].bobber
+            catchAnimationDelay = RodSkinDelays[skin].catch
+            print(string.format("Loaded %s: Bobber=%.2fs, Catch=%.2fs", skin, bobberAnimationDelay, catchAnimationDelay))
+            
+            WindUI:Notify({
+                Title = "Rod Skin Set!",
+                Content = string.format("%s\nBobber: %.2fs | Catch: %.2fs", skin, bobberAnimationDelay, catchAnimationDelay),
+                Duration = 4,
+                Icon = "check"
+            })
+        end
+        
+        SaveConfig()
+    end
 })
 
 blatant:Paragraph({
-    Title = "ℹ️ How It Works",
-    Content = [[
-Simple 2-Delay System:
-
-1️⃣ Delay Bait (sebelum cast)
-   └─ Tunggu setelah throw bait
-
-2️⃣ Delay Cast (sebelum loop)
-   └─ Tunggu setelah catch fish
-
-Easy & effective! 🎣
-]]
+    Title = "📋 Current Delays",
+    Content = string.format("Bobber Animation: %.2fs\nCatch Animation: %.2fs", bobberAnimationDelay, catchAnimationDelay)
 })
 
+local delayDisplay = blatant:Paragraph({
+    Title = "📋 Current Delays",
+    Content = string.format("Bobber Animation: %.2fs\nCatch Animation: %.2fs", bobberAnimationDelay, catchAnimationDelay)
+})
+
+task.spawn(function()
+    while task.wait(1) do
+        pcall(function()
+            delayDisplay:SetContent(string.format("Bobber Animation: %.2fs\nCatch Animation: %.2fs", bobberAnimationDelay, catchAnimationDelay))
+        end)
+    end
+end)
+
 blatant:Input({
-    Title = "⏱️ Delay Bait (seconds)",
-    Description = "Delay SEBELUM cast (after throw bait)",
-    Value = tostring(delayBait),
-    Placeholder = "0.5",
+    Title = "⏱️ Bobber Animation Delay",
+    Description = "Delay after throwing bait (for custom mode)",
+    Value = tostring(bobberAnimationDelay),
+    Placeholder = "0.3",
     Callback = function(input)
         local val = tonumber(input)
         if val and val >= 0.1 and val <= 5 then 
-            delayBait = val 
+            bobberAnimationDelay = val 
+            selectedSkin = "Custom (Manual)"
             SaveConfig()
-            print("Delay Bait set to:", val)
+            print("Bobber delay set to:", val)
         end
     end
 })
 
 blatant:Input({
-    Title = "⏱️ Delay Cast (seconds)",
-    Description = "Delay SETELAH catch (before loop again)",
-    Value = tostring(delayCast),
-    Placeholder = "0.3",
+    Title = "⏱️ Catch Animation Delay",
+    Description = "Delay after catching fish (for custom mode)",
+    Value = tostring(catchAnimationDelay),
+    Placeholder = "0.2",
     Callback = function(input)
         local val = tonumber(input)
         if val and val >= 0.1 and val <= 5 then 
-            delayCast = val 
+            catchAnimationDelay = val 
+            selectedSkin = "Custom (Manual)"
             SaveConfig()
-            print("Delay Cast set to:", val)
+            print("Catch delay set to:", val)
         end
     end
 })
 
 blatant:Toggle({
-    Title = "🎣 Enable Simple Blatant",
-    Description = "Start instant fishing with 2 delays",
+    Title = "🎣 Enable Skin-Based Blatant",
+    Description = "Start instant fishing with skin delays",
     Value = false,
     Callback = function(state)
         blatantInstantState = state
@@ -1122,7 +1188,6 @@ blatant:Toggle({
         SuppressGameVisuals(state)
         
         if state then
-            -- Enable auto fishing
             if Remotes.UpdateAutoFishingState then
                 pcall(function() 
                     Remotes.UpdateAutoFishingState:InvokeServer(true) 
@@ -1133,15 +1198,13 @@ blatant:Toggle({
                 end)
             end
 
-            -- Start fishing loop
             blatantLoopThread = task.spawn(function()
                 while blatantInstantState do
-                    runSimpleBlatant()
-                    task.wait(0.1) -- Small wait between attempts
+                    runSkinBasedBlatant()
+                    task.wait(0.1)
                 end
             end)
 
-            -- Keep rod equipped
             if blatantEquipThread then task.cancel(blatantEquipThread) end
             blatantEquipThread = task.spawn(function()
                 while blatantInstantState do
@@ -1155,20 +1218,18 @@ blatant:Toggle({
             end)
             
             WindUI:Notify({
-                Title = "Simple Blatant ON", 
-                Content = string.format("Delays: Bait %.1fs | Cast %.1fs", delayBait, delayCast),
-                Duration = 3, 
+                Title = "Skin-Based Blatant ON", 
+                Content = string.format("%s\nBobber: %.2fs | Catch: %.2fs", selectedSkin, bobberAnimationDelay, catchAnimationDelay),
+                Duration = 4, 
                 Icon = "zap"
             })
         else
-            -- Disable auto fishing
             if Remotes.UpdateAutoFishingState then
                 pcall(function() 
                     Remotes.UpdateAutoFishingState:InvokeServer(false) 
                 end)
             end
             
-            -- Stop threads
             if blatantLoopThread then 
                 task.cancel(blatantLoopThread) 
                 blatantLoopThread = nil 
@@ -1181,7 +1242,7 @@ blatant:Toggle({
             isFishingInProgress = false
             
             WindUI:Notify({
-                Title = "Simple Blatant OFF", 
+                Title = "Skin-Based Blatant OFF", 
                 Duration = 2,
                 Icon = "x"
             })
@@ -1190,19 +1251,20 @@ blatant:Toggle({
 })
 
 blatant:Paragraph({
-    Title = "💡 Recommended Settings",
+    Title = "📖 Rod Skin Database",
     Content = [[
-Fast (Risky):
-- Delay Bait: 0.3s
-- Delay Cast: 0.2s
-
-Balanced (Recommended):
-- Delay Bait: 0.5s
-- Delay Cast: 0.3s
-
-Safe (Slow but stable):
-- Delay Bait: 0.8s
-- Delay Cast: 0.5s
+Holy Trident: 0.5s | 0.2s
+Soul Scythe: 0.4s | 0.2s
+Candy Cane Trident: 0.4s | 0.2s
+The Vanquisher: 0.3s | 0.2s
+Eclipse Katana: 0.2s | 0.2s
+Princess Parasol: 0.22s | 0.2s
+Christmas Parasol: 0.22s | 0.2s
+Frozen Krampus Scythe: 0.3s | 0.1s
+GingerBread Katana: 0.2s | 0.2s
+Eternal Flower: 0.2s | 0.2s
+Blackhole Sword: 0.1s | 0.1s
+Ethereal Sword: 0.1s | 0.1s ⚡
 ]]
 })
 
@@ -1223,11 +1285,11 @@ Your settings are automatically saved:
 ✅ Webhook URLs
 ✅ Discord User ID  
 ✅ Filter settings
-✅ Delay Bait
-✅ Delay Cast
+✅ Selected Rod Skin
+✅ Animation Delays
 ✅ Toggle states
 
-Simple & automatic!
+Skin-aware & automatic!
 ]]
 })
 
@@ -1321,8 +1383,9 @@ Fish Webhook: %s
 Disconnect Monitor: %s
 Selected Rarities: %d
 Selected Fish: %d
-Delay Bait: %.2fs
-Delay Cast: %.2fs
+Rod Skin: %s
+Bobber Delay: %.2fs
+Catch Delay: %.2fs
 ]],
                 WEBHOOK_URL ~= "" and "✅ Set" or "❌ Empty",
                 DISCONNECT_WEBHOOK_URL ~= "" and "✅ Set" or "❌ Empty",
@@ -1331,8 +1394,9 @@ Delay Cast: %.2fs
                 isDisconnectWebhookEnabled and "🟢 ON" or "🔴 OFF",
                 #SelectedRarityCategories,
                 #SelectedWebhookItemNames,
-                delayBait,
-                delayCast
+                selectedSkin,
+                bobberAnimationDelay,
+                catchAnimationDelay
             )
             
             configDisplay:SetContent(info)
@@ -1353,38 +1417,42 @@ local infoSec = InfoTab:Section({
 infoSec:Paragraph({
     Title = "📦 Version & Features",
     Content = [[
-Version: v3.2 - Simple Blatant
+Version: v3.3 - Skin-Based Delays
 
 ✨ What's New:
-- Simplified to 2 delays only
-- Delay Bait (before cast)
-- Delay Cast (before loop)
-- Easy to understand
+- 12 Pre-configured rod skins
+- Automatic delay selection
+- BobberAnimationDelay
+- CatchAnimationDelay
+- Custom manual mode
 - Auto save config
 
 Features:
 ✅ Discord Fish Webhook
 ✅ Disconnect Alerts
-✅ Auto Config Save
-✅ Simple 2-Delay Blatant
+✅ Skin-Based Blatant
+✅ 12 Rod Presets
 ✅ Mobile Support
 ]]
 })
 
 infoSec:Paragraph({
-    Title = "🎣 Simple Blatant Explanation",
+    Title = "🎣 How Skin Delays Work",
     Content = [[
-How the 2-delay system works:
+Each rod skin has unique animations:
 
-1. Throw Bait
-   ⏱️ Wait [Delay Bait]
-   
-2. Cast Rod (catch fish instantly)
-   ⏱️ Wait [Delay Cast]
-   
-3. Loop back to step 1
+1. Select your rod skin
+   └─ Delays auto-applied
 
-Simple, effective, and easy! 🎯
+2. Throw Bait
+   ⏱️ Wait [Bobber Animation]
+   
+3. Cast & Catch (instant)
+   ⏱️ Wait [Catch Animation]
+   
+4. Loop back to step 2
+
+Perfect timing for each skin! 🎯
 ]]
 })
 
@@ -1417,25 +1485,24 @@ task.spawn(function()
     end
 end)
 
--- ==================== AUTO-START DISCONNECT MONITOR ====================
 if isDisconnectWebhookEnabled and DISCONNECT_WEBHOOK_URL ~= "" then
     StartDisconnectMonitor()
     print("✅ Auto-started disconnect monitor from saved config")
 end
 
--- ==================== FINAL NOTIFICATIONS ====================
 print("=" .. string.rep("=", 50))
-print("✅ Raditya Webhook v3.2 Loaded!")
+print("✅ Raditya Webhook v3.3 Loaded!")
 print("💾 Config System: Auto Save/Load")
 print("📨 Fish Webhook System Ready")
 print("🔔 Disconnect Monitor Ready")
-print("🎣 Simple 2-Delay Blatant Ready")
-print("⏱️  Delay Bait: " .. delayBait .. "s | Delay Cast: " .. delayCast .. "s")
+print("🎣 Skin-Based Blatant Ready")
+print("🎯 Selected Skin:", selectedSkin)
+print("⏱️  Bobber: " .. bobberAnimationDelay .. "s | Catch: " .. catchAnimationDelay .. "s")
 print("=" .. string.rep("=", 50))
 
 WindUI:Notify({
     Title = "Script Loaded!",
-    Content = "Raditya v3.2 - Simple 2-Delay Blatant!",
+    Content = "Raditya v3.3 - Skin-Based Delays!",
     Duration = 5,
     Icon = "check-circle"
 })
@@ -1444,7 +1511,7 @@ if WEBHOOK_URL ~= "" or DISCONNECT_WEBHOOK_URL ~= "" then
     task.wait(2)
     WindUI:Notify({
         Title = "Config Loaded!",
-        Content = "Previous settings restored automatically",
+        Content = string.format("Skin: %s loaded!", selectedSkin),
         Duration = 4,
         Icon = "database"
     })
