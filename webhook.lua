@@ -1,9 +1,9 @@
 -- ==================== FISH IT WEBHOOK BY RADITYA ====================
--- Delta Executor (Android) Compatible Version - v3.1 AUTO SAVE CONFIG
--- Enhanced Webhook + Disconnect Monitor + Improved RockHub Blatant
+-- Delta Executor (Android) Compatible Version - v3.2 SIMPLE BLATANT
+-- Enhanced Webhook + Disconnect Monitor + Simple RockHub Blatant
 
 print("=" .. string.rep("=", 50))
-print("🎣 Webhook By Raditya Loaded! (v3.1 + Auto Save + Improved RockHub)")
+print("🎣 Webhook By Raditya Loaded! (v3.2 + Simple Blatant)")
 print("=" .. string.rep("=", 50))
 
 -- Load WindUI
@@ -19,7 +19,7 @@ local TeleportService = game:GetService("TeleportService")
 local GuiService = game:GetService("GuiService")
 
 -- ==================== CONFIG FILE PATH ====================
-local CONFIG_FILE = "RadityaWebhook_Config_v3.1.json"
+local CONFIG_FILE = "RadityaWebhook_Config_v3.2.json"
 
 -- ==================== MOBILE COMPATIBILITY LAYER ====================
 local function isMobileExecutor()
@@ -149,30 +149,24 @@ local Remotes = {
 local WEBHOOK_URL = ""
 local DISCONNECT_WEBHOOK_URL = ""
 local DISCORD_USER_ID = ""
-local WEBHOOK_USERNAME = "Raditya Fish Notify v3.1"
+local WEBHOOK_USERNAME = "Raditya Fish Notify v3.2"
 local isWebhookEnabled = false
 local isDisconnectWebhookEnabled = false
 local SelectedRarityCategories = {}
 local SelectedWebhookItemNames = {}
 local ImageURLCache = {}
 
--- Improved RockHub Blatant Fishing Configuration
+-- Simple Blatant Fishing Configuration
 local blatantInstantState = false
 local blatantLoopThread = nil
 local blatantEquipThread = nil
-local blatantStabilityThread = nil
 local isFishingInProgress = false
-local completeDelay = 0.08
-local cancelDelay = 0.04
-local loopInterval = 0.25
-local equipInterval = 0.5
-_G.RockHub_BlatantActive = false
 
--- Stability improvements
-local lastSuccessfulCast = 0
-local consecutiveFailures = 0
-local maxConsecutiveFailures = 3
-local recoveryDelay = 1
+-- SIMPLE DELAYS - ONLY 2 SETTINGS
+local delayBait = 0.5      -- Delay after baiting (sebelum cast)
+local delayCast = 0.3      -- Delay setelah cast (sebelum loop lagi)
+
+_G.RockHub_BlatantActive = false
 
 -- Disconnect Detection
 local hasSentDisconnect = false
@@ -182,8 +176,6 @@ local disconnectMonitorActive = false
 local totalFishCaught = 0
 local successfulWebhooks = 0
 local failedWebhooks = 0
-local totalCasts = 0
-local successfulCasts = 0
 
 -- Performance Statistics
 local performanceStats = {
@@ -204,12 +196,10 @@ local function SaveConfig()
         selectedRarities = SelectedRarityCategories,
         selectedFishNames = SelectedWebhookItemNames,
         blatantSettings = {
-            completeDelay = completeDelay,
-            cancelDelay = cancelDelay,
-            loopInterval = loopInterval,
-            equipInterval = equipInterval
+            delayBait = delayBait,
+            delayCast = delayCast
         },
-        version = "3.1"
+        version = "3.2"
     }
     
     local success, encoded = pcall(function()
@@ -248,10 +238,8 @@ local function LoadConfig()
         
         -- Load blatant settings
         if result.blatantSettings then
-            completeDelay = result.blatantSettings.completeDelay or 0.08
-            cancelDelay = result.blatantSettings.cancelDelay or 0.04
-            loopInterval = result.blatantSettings.loopInterval or 0.25
-            equipInterval = result.blatantSettings.equipInterval or 0.5
+            delayBait = result.blatantSettings.delayBait or 0.5
+            delayCast = result.blatantSettings.delayCast or 0.3
         end
         
         print("✅ Config loaded successfully")
@@ -465,7 +453,6 @@ local function SendDisconnectWebhook(reason)
     local displayName = LocalPlayer.DisplayName
     local userId = tostring(LocalPlayer.UserId)
     
-    -- Format timestamp
     local timeData = os.date("*t")
     local timestamp = string.format(
         "%02d/%02d/%04d %02d:%02d %s",
@@ -477,7 +464,6 @@ local function SendDisconnectWebhook(reason)
         timeData.hour >= 12 and "PM" or "AM"
     )
     
-    -- Prepare mention
     local mentionText = ""
     if DISCORD_USER_ID and DISCORD_USER_ID ~= "" then
         mentionText = string.format("🔔 <@%s> Your account got disconnected!", DISCORD_USER_ID:gsub("%D", ""))
@@ -485,10 +471,8 @@ local function SendDisconnectWebhook(reason)
         mentionText = "🔔 Account Disconnected Alert!"
     end
     
-    -- Clean reason
     local cleanReason = (reason and reason ~= "") and reason or "Unknown Reason / Kicked"
     
-    -- Get current stats
     local currentCoins = 0
     local caughtCount = 0
     
@@ -523,7 +507,7 @@ local function SendDisconnectWebhook(reason)
             url = "https://media.tenor.com/rx88bhLtmyUAAAAi/gawr-gura.gif"
         },
         footer = {
-            text = "Raditya Disconnect Monitor v3.1",
+            text = "Raditya Disconnect Monitor v3.2",
             icon_url = "https://i.imgur.com/WltO8IG.png"
         },
         timestamp = os.date("!%Y-%m-%dT%H:%M:%S")
@@ -539,12 +523,10 @@ local function SendDisconnectWebhook(reason)
     end)
 end
 
--- Monitor for disconnects
 local function StartDisconnectMonitor()
     if disconnectMonitorActive then return end
     disconnectMonitorActive = true
     
-    -- Monitor ErrorMessageChanged
     GuiService.ErrorMessageChanged:Connect(function(errorMessage)
         if errorMessage and errorMessage ~= "" and not hasSentDisconnect then
             print("[Disconnect Detected] Reason:", errorMessage)
@@ -552,7 +534,6 @@ local function StartDisconnectMonitor()
         end
     end)
     
-    -- Monitor OnTeleport
     LocalPlayer.OnTeleport:Connect(function(teleportState)
         if teleportState == Enum.TeleportState.Started then
             hasSentDisconnect = true
@@ -560,7 +541,6 @@ local function StartDisconnectMonitor()
         end
     end)
     
-    -- Monitor Player Removing
     Players.PlayerRemoving:Connect(function(player)
         if player == LocalPlayer and not hasSentDisconnect then
             SendDisconnectWebhook("Player was removed from server")
@@ -623,8 +603,6 @@ local function onFishObtained(itemId, metadata, fullData)
         local isUserFilterMatch = shouldNotify(fishRarityUpper, metadata, fishName)
 
         if isWebhookEnabled and WEBHOOK_URL ~= "" and isUserFilterMatch then
-            local successRate = totalCasts > 0 and math.floor((successfulCasts / totalCasts) * 100) or 0
-            
             local embed = {
                 title = string.format("🎣 New Fish Caught! (%s)", fishName),
                 description = string.format("Caught by **%s**", LocalPlayer.DisplayName or LocalPlayer.Name),
@@ -636,12 +614,12 @@ local function onFishObtained(itemId, metadata, fullData)
                     {name = "✨ Mutation", value = string.format("`%s`", mutationDisplay), inline = true},
                     {name = "💰 Sell Price", value = string.format("`%s`", formattedSellPrice), inline = true},
                     {name = "💵 Coins", value = string.format("`%s`", formattedCoins), inline = true},
-                    {name = "📊 Performance", value = string.format("`FPS: %d | Ping: %dms | Success: %d%%`", 
-                        performanceStats.fps, performanceStats.ping, successRate), inline = false}
+                    {name = "📊 Performance", value = string.format("`FPS: %d | Ping: %dms`", 
+                        performanceStats.fps, performanceStats.ping), inline = false}
                 },
                 thumbnail = {url = imageUrl},
                 footer = {
-                    text = string.format("Raditya Webhook v3.1 • Total: %s • %s", 
+                    text = string.format("Raditya Webhook v3.2 • Total: %s • %s", 
                         caughtDisplay, os.date("%Y-%m-%d %H:%M:%S"))
                 },
                 timestamp = os.date("!%Y-%m-%dT%H:%M:%S")
@@ -665,7 +643,6 @@ local function onFishObtained(itemId, metadata, fullData)
     end
 end
 
--- Hook fish notification
 if Remotes.ObtainedNewFishNotification then
     Remotes.ObtainedNewFishNotification.OnClientEvent:Connect(function(itemId, metadata, fullData)
         totalFishCaught = totalFishCaught + 1
@@ -677,7 +654,7 @@ if Remotes.ObtainedNewFishNotification then
     end)
 end
 
--- ==================== IMPROVED ROCKHUB BLATANT FISHING SYSTEM ====================
+-- ==================== SIMPLE BLATANT FISHING SYSTEM ====================
 -- Logic Killer
 task.spawn(function()
     local success, FishingController = pcall(function() 
@@ -695,12 +672,12 @@ task.spawn(function()
         
         FishingController.SendFishingRequestToServer = function(...)
             if _G.RockHub_BlatantActive then 
-                return false, "Blocked by RockHub Blatant" 
+                return false, "Blocked by RockHub Simple" 
             end
             return Old_Cast(...)
         end
         
-        print("✅ Fishing Controller hooked (RockHub)")
+        print("✅ Fishing Controller hooked (Simple)")
     end
 end)
 
@@ -708,7 +685,7 @@ end)
 task.spawn(function()
     local mt = safeGetMetatable()
     if not mt then 
-        warn("[RockHub] Metatable hook disabled")
+        warn("[Simple Blatant] Metatable hook disabled")
         return 
     end
     
@@ -736,7 +713,7 @@ task.spawn(function()
     end)
     
     safeSetReadonly(mt, true)
-    print("✅ Namecall hook installed (RockHub)")
+    print("✅ Namecall hook installed (Simple)")
 end)
 
 -- Visual Suppressor
@@ -798,77 +775,45 @@ local function SuppressGameVisuals(active)
     end
 end
 
--- IMPROVED: Instant fishing with error recovery
-local function runBlatantInstant()
+-- SIMPLE: Hanya 2 delay - Bait dan Cast
+local function runSimpleBlatant()
     if not blatantInstantState or isFishingInProgress then return end
     
     isFishingInProgress = true
-    totalCasts = totalCasts + 1
     
     task.spawn(function()
-        local castStartTime = tick()
         local success = pcall(function()
             local timestamp = os.time() + os.clock()
             
-            -- Step 1: Charge
+            -- Step 1: Bait (Charge Rod)
             if Remotes.ChargeFishingRod then
                 Remotes.ChargeFishingRod:InvokeServer(timestamp)
             end
             
-            task.wait(0.01)
+            -- Delay Bait (tunggu sebelum cast)
+            task.wait(delayBait)
             
-            -- Step 2: Start minigame
+            -- Step 2: Cast (Start Minigame)
             if Remotes.RequestFishingMinigameStarted then
                 Remotes.RequestFishingMinigameStarted:InvokeServer(-139.6379699707, 0.99647927980797)
             end
             
-            task.wait(completeDelay)
-            
-            -- Step 3: Complete
+            -- Step 3: Complete (instant)
             if Remotes.FishingCompleted then
                 Remotes.FishingCompleted:FireServer()
             end
             
-            task.wait(cancelDelay)
-            
-            -- Step 4: Cancel
+            -- Step 4: Cancel (instant)
             if Remotes.CancelFishingInputs then
                 Remotes.CancelFishingInputs:InvokeServer()
             end
+            
+            -- Delay Cast (tunggu sebelum loop lagi)
+            task.wait(delayCast)
         end)
         
-        if success then
-            lastSuccessfulCast = tick()
-            consecutiveFailures = 0
-            successfulCasts = successfulCasts + 1
-        else
-            consecutiveFailures = consecutiveFailures + 1
-            warn("[Fishing Error] Cycle failed, consecutive failures:", consecutiveFailures)
-            
-            -- Recovery mechanism
-            if consecutiveFailures >= maxConsecutiveFailures then
-                warn("[Recovery] Too many failures, attempting recovery...")
-                task.wait(recoveryDelay)
-                
-                -- Try to reset state
-                pcall(function()
-                    if Remotes.CancelFishingInputs then
-                        Remotes.CancelFishingInputs:InvokeServer()
-                    end
-                end)
-                
-                task.wait(0.5)
-                
-                -- Re-equip rod
-                pcall(function()
-                    if Remotes.EquipToolFromHotbar then
-                        Remotes.EquipToolFromHotbar:FireServer(1)
-                    end
-                end)
-                
-                consecutiveFailures = 0
-                print("[Recovery] State reset complete")
-            end
+        if not success then
+            warn("[Simple Blatant] Cycle failed")
         end
         
         isFishingInProgress = false
@@ -876,15 +821,14 @@ local function runBlatantInstant()
 end
 
 -- ==================== CREATE WINDUI ====================
--- Load saved config first
 LoadConfig()
 
 local Window = WindUI:CreateWindow({
-    Title = "Raditya Webhook v3.1 (Improved RockHub)",
+    Title = "Raditya Webhook v3.2 (Simple Blatant)",
     Icon = "rbxassetid://116236936447443",
-    Author = "Raditya (Auto Save)",
-    Folder = "RadityaWebhookV31",
-    Size = UDim2.fromOffset(640, 500),
+    Author = "Raditya (2 Delays Only)",
+    Folder = "RadityaWebhookV32",
+    Size = UDim2.fromOffset(640, 480),
     MinSize = Vector2.new(560, 250),
     MaxSize = Vector2.new(950, 760),
     Transparent = true,
@@ -984,15 +928,15 @@ webhooksec:Button({
         end
         
         local testEmbed = {
-            title = "🎣 Raditya Fish Webhook Test (v3.1)",
-            description = "Test successful! Improved RockHub Blatant!",
+            title = "🎣 Raditya Fish Webhook Test (v3.2)",
+            description = "Test successful! Simple 2-Delay Blatant!",
             color = 0x00FF00,
             fields = {
                 {name = "Executor", value = identifyexecutor and identifyexecutor() or "Unknown", inline = true},
                 {name = "User", value = LocalPlayer.Name, inline = true},
                 {name = "FPS", value = tostring(performanceStats.fps), inline = true}
             },
-            footer = {text = "Raditya Webhook v3.1 - Improved RockHub"},
+            footer = {text = "Raditya Webhook v3.2 - Simple Blatant"},
             timestamp = os.date("!%Y-%m-%dT%H:%M:%S")
         }
         
@@ -1005,7 +949,6 @@ webhooksec:Button({
     end
 })
 
--- ==================== DISCONNECT WEBHOOK SECTION ====================
 local disconnectSec = WebhookTab:Section({
     Title = "Disconnect Alert Configuration",
 })
@@ -1101,7 +1044,6 @@ local StatsSection = WebhookTab:Section({Title = "Statistics"})
 local fishLabel = StatsSection:Paragraph({Title = "Fish Caught: 0", Content = ""})
 local webhookLabel = StatsSection:Paragraph({Title = "Webhooks Sent: 0", Content = ""})
 local failedLabel = StatsSection:Paragraph({Title = "Failed: 0", Content = ""})
-local successRateLabel = StatsSection:Paragraph({Title = "Success Rate: 0%", Content = ""})
 
 task.spawn(function()
     while task.wait(1) do
@@ -1109,9 +1051,6 @@ task.spawn(function()
             fishLabel:SetTitle("Fish Caught: " .. FormatNumber(totalFishCaught))
             webhookLabel:SetTitle("Webhooks Sent: " .. FormatNumber(successfulWebhooks))
             failedLabel:SetTitle("Failed: " .. FormatNumber(failedWebhooks))
-            
-            local successRate = totalCasts > 0 and math.floor((successfulCasts / totalCasts) * 100) or 0
-            successRateLabel:SetTitle(string.format("Blatant Success Rate: %d%% (%d/%d)", successRate, successfulCasts, totalCasts))
         end)
     end
 end)
@@ -1123,73 +1062,58 @@ local FishingTab = Window:Tab({
 })
 
 local blatant = FishingTab:Section({
-    Title = "Improved RockHub Blatant Fishing",
-    Description = "Enhanced stability with auto-recovery"
+    Title = "Simple Blatant Fishing (2 Delays)",
+    Description = "Easy to configure - only bait & cast delays"
+})
+
+blatant:Paragraph({
+    Title = "ℹ️ How It Works",
+    Content = [[
+Simple 2-Delay System:
+
+1️⃣ Delay Bait (sebelum cast)
+   └─ Tunggu setelah throw bait
+
+2️⃣ Delay Cast (sebelum loop)
+   └─ Tunggu setelah catch fish
+
+Easy & effective! 🎣
+]]
 })
 
 blatant:Input({
-    Title = "Loop Interval (seconds)",
-    Description = "Time between fishing cycles",
-    Value = tostring(loopInterval),
-    Placeholder = "0.25",
-    Callback = function(input)
-        local val = tonumber(input)
-        if val and val >= 0.1 and val <= 5 then 
-            loopInterval = val 
-            SaveConfig()
-            print("Loop interval:", val)
-        end
-    end
-})
-
-blatant:Input({
-    Title = "Complete Delay (seconds)",
-    Description = "Delay before completing",
-    Value = tostring(completeDelay),
-    Placeholder = "0.08",
-    Callback = function(input)
-        local val = tonumber(input)
-        if val and val >= 0.05 and val <= 1 then 
-            completeDelay = val 
-            SaveConfig()
-            print("Complete delay:", val)
-        end
-    end
-})
-
-blatant:Input({
-    Title = "Cancel Delay (seconds)",
-    Description = "Delay before canceling",
-    Value = tostring(cancelDelay),
-    Placeholder = "0.04",
-    Callback = function(input)
-        local val = tonumber(input)
-        if val and val >= 0.01 and val <= 1 then 
-            cancelDelay = val 
-            SaveConfig()
-            print("Cancel delay:", val)
-        end
-    end
-})
-
-blatant:Input({
-    Title = "Equip Interval (seconds)",
-    Description = "Rod re-equip interval",
-    Value = tostring(equipInterval),
+    Title = "⏱️ Delay Bait (seconds)",
+    Description = "Delay SEBELUM cast (after throw bait)",
+    Value = tostring(delayBait),
     Placeholder = "0.5",
     Callback = function(input)
         local val = tonumber(input)
-        if val and val >= 0.3 and val <= 2 then 
-            equipInterval = val 
+        if val and val >= 0.1 and val <= 5 then 
+            delayBait = val 
             SaveConfig()
-            print("Equip interval:", val)
+            print("Delay Bait set to:", val)
+        end
+    end
+})
+
+blatant:Input({
+    Title = "⏱️ Delay Cast (seconds)",
+    Description = "Delay SETELAH catch (before loop again)",
+    Value = tostring(delayCast),
+    Placeholder = "0.3",
+    Callback = function(input)
+        local val = tonumber(input)
+        if val and val >= 0.1 and val <= 5 then 
+            delayCast = val 
+            SaveConfig()
+            print("Delay Cast set to:", val)
         end
     end
 })
 
 blatant:Toggle({
-    Title = "Enable RockHub Blatant Fishing",
-    Description = "Instant fishing with auto-recovery",
+    Title = "🎣 Enable Simple Blatant",
+    Description = "Start instant fishing with 2 delays",
     Value = false,
     Callback = function(state)
         blatantInstantState = state
@@ -1198,10 +1122,6 @@ blatant:Toggle({
         SuppressGameVisuals(state)
         
         if state then
-            -- Reset statistics
-            consecutiveFailures = 0
-            lastSuccessfulCast = tick()
-            
             -- Enable auto fishing
             if Remotes.UpdateAutoFishingState then
                 pcall(function() 
@@ -1216,8 +1136,8 @@ blatant:Toggle({
             -- Start fishing loop
             blatantLoopThread = task.spawn(function()
                 while blatantInstantState do
-                    runBlatantInstant()
-                    task.wait(loopInterval)
+                    runSimpleBlatant()
+                    task.wait(0.1) -- Small wait between attempts
                 end
             end)
 
@@ -1230,45 +1150,13 @@ blatant:Toggle({
                             Remotes.EquipToolFromHotbar:FireServer(1) 
                         end)
                     end
-                    task.wait(equipInterval)
-                end
-            end)
-            
-            -- Stability monitor
-            if blatantStabilityThread then task.cancel(blatantStabilityThread) end
-            blatantStabilityThread = task.spawn(function()
-                while blatantInstantState do
-                    task.wait(5)
-                    
-                    -- Check if no successful casts in last 10 seconds
-                    if tick() - lastSuccessfulCast > 10 then
-                        warn("[Stability] No successful casts detected, forcing recovery...")
-                        
-                        -- Force recovery
-                        pcall(function()
-                            if Remotes.CancelFishingInputs then
-                                Remotes.CancelFishingInputs:InvokeServer()
-                            end
-                        end)
-                        
-                        task.wait(1)
-                        
-                        pcall(function()
-                            if Remotes.EquipToolFromHotbar then
-                                Remotes.EquipToolFromHotbar:FireServer(1)
-                            end
-                        end)
-                        
-                        lastSuccessfulCast = tick()
-                        consecutiveFailures = 0
-                        print("[Stability] Recovery complete")
-                    end
+                    task.wait(1)
                 end
             end)
             
             WindUI:Notify({
-                Title = "RockHub Blatant ON", 
-                Content = "Improved stability activated!",
+                Title = "Simple Blatant ON", 
+                Content = string.format("Delays: Bait %.1fs | Cast %.1fs", delayBait, delayCast),
                 Duration = 3, 
                 Icon = "zap"
             })
@@ -1289,15 +1177,11 @@ blatant:Toggle({
                 task.cancel(blatantEquipThread) 
                 blatantEquipThread = nil 
             end
-            if blatantStabilityThread then 
-                task.cancel(blatantStabilityThread) 
-                blatantStabilityThread = nil 
-            end
             
             isFishingInProgress = false
             
             WindUI:Notify({
-                Title = "RockHub Blatant OFF", 
+                Title = "Simple Blatant OFF", 
                 Duration = 2,
                 Icon = "x"
             })
@@ -1306,17 +1190,19 @@ blatant:Toggle({
 })
 
 blatant:Paragraph({
-    Title = "🔧 Improvements",
+    Title = "💡 Recommended Settings",
     Content = [[
-✅ Auto error recovery
-✅ Consecutive failure detection
-✅ Automatic state reset
-✅ Stability monitoring
-✅ Success rate tracking
-✅ Smart rod re-equipping
+Fast (Risky):
+- Delay Bait: 0.3s
+- Delay Cast: 0.2s
 
-If 3 failures occur, auto-recovery triggers.
-If no catches in 10s, force recovery.
+Balanced (Recommended):
+- Delay Bait: 0.5s
+- Delay Cast: 0.3s
+
+Safe (Slow but stable):
+- Delay Bait: 0.8s
+- Delay Cast: 0.5s
 ]]
 })
 
@@ -1336,11 +1222,12 @@ configSec:Paragraph({
 Your settings are automatically saved:
 ✅ Webhook URLs
 ✅ Discord User ID  
-✅ Filter settings (rarity & names)
-✅ Blatant fishing settings
+✅ Filter settings
+✅ Delay Bait
+✅ Delay Cast
 ✅ Toggle states
 
-Config loads on script execution!
+Simple & automatic!
 ]]
 })
 
@@ -1434,10 +1321,8 @@ Fish Webhook: %s
 Disconnect Monitor: %s
 Selected Rarities: %d
 Selected Fish: %d
-Loop Interval: %.2fs
-Complete Delay: %.2fs
-Cancel Delay: %.2fs
-Equip Interval: %.2fs
+Delay Bait: %.2fs
+Delay Cast: %.2fs
 ]],
                 WEBHOOK_URL ~= "" and "✅ Set" or "❌ Empty",
                 DISCONNECT_WEBHOOK_URL ~= "" and "✅ Set" or "❌ Empty",
@@ -1446,10 +1331,8 @@ Equip Interval: %.2fs
                 isDisconnectWebhookEnabled and "🟢 ON" or "🔴 OFF",
                 #SelectedRarityCategories,
                 #SelectedWebhookItemNames,
-                loopInterval,
-                completeDelay,
-                cancelDelay,
-                equipInterval
+                delayBait,
+                delayCast
             )
             
             configDisplay:SetContent(info)
@@ -1470,38 +1353,38 @@ local infoSec = InfoTab:Section({
 infoSec:Paragraph({
     Title = "📦 Version & Features",
     Content = [[
-Version: v3.1 - Improved RockHub
+Version: v3.2 - Simple Blatant
 
-✨ New in v3.1:
-- Auto save/load configuration
-- Improved RockHub stability
-- Auto error recovery
-- Success rate tracking
-- Stability monitoring
+✨ What's New:
+- Simplified to 2 delays only
+- Delay Bait (before cast)
+- Delay Cast (before loop)
+- Easy to understand
+- Auto save config
 
 Features:
 ✅ Discord Fish Webhook
 ✅ Disconnect Alerts
 ✅ Auto Config Save
-✅ Improved RockHub
+✅ Simple 2-Delay Blatant
 ✅ Mobile Support
 ]]
 })
 
 infoSec:Paragraph({
-    Title = "🎣 RockHub Improvements",
+    Title = "🎣 Simple Blatant Explanation",
     Content = [[
-Stability Enhancements:
-✅ Auto-recovery on failures
-✅ Consecutive error detection
-✅ 10-second timeout monitor
-✅ Smart state reset
-✅ Success rate tracking
-✅ Optimized timing
+How the 2-delay system works:
 
-Recovery triggers after:
-- 3 consecutive failures
-- 10 seconds no catch
+1. Throw Bait
+   ⏱️ Wait [Delay Bait]
+   
+2. Cast Rod (catch fish instantly)
+   ⏱️ Wait [Delay Cast]
+   
+3. Loop back to step 1
+
+Simple, effective, and easy! 🎯
 ]]
 })
 
@@ -1519,25 +1402,17 @@ local pingLabel = perfSec:Paragraph({
     Content = "Network latency"
 })
 
-local memLabel = perfSec:Paragraph({
-    Title = "Memory: --",
-    Content = "Instance memory usage"
-})
-
 task.spawn(function()
     while task.wait(0.5) do
         pcall(function()
             local fps = performanceStats.fps
             local ping = performanceStats.ping
-            local mem = performanceStats.memory
             
             local fpsStatus = fps >= 60 and "🟢" or (fps >= 30 and "🟡" or "🔴")
             local pingStatus = ping < 100 and "🟢" or (ping < 200 and "🟡" or "🔴")
-            local memStatus = mem < 500 and "🟢" or (mem < 1000 and "🟡" or "🔴")
             
             fpsLabel:SetTitle(string.format("%s FPS: %d", fpsStatus, fps))
             pingLabel:SetTitle(string.format("%s Ping: %d ms", pingStatus, ping))
-            memLabel:SetTitle(string.format("%s Memory: %d MB", memStatus, mem))
         end)
     end
 end)
@@ -1550,22 +1425,21 @@ end
 
 -- ==================== FINAL NOTIFICATIONS ====================
 print("=" .. string.rep("=", 50))
-print("✅ Raditya Webhook v3.1 Loaded!")
+print("✅ Raditya Webhook v3.2 Loaded!")
 print("💾 Config System: Auto Save/Load")
 print("📨 Fish Webhook System Ready")
 print("🔔 Disconnect Monitor Ready")
-print("🎣 Improved RockHub Blatant Ready")
-print("🔧 Stability Features: Active")
+print("🎣 Simple 2-Delay Blatant Ready")
+print("⏱️  Delay Bait: " .. delayBait .. "s | Delay Cast: " .. delayCast .. "s")
 print("=" .. string.rep("=", 50))
 
 WindUI:Notify({
     Title = "Script Loaded!",
-    Content = "Raditya v3.1 - Improved RockHub!",
+    Content = "Raditya v3.2 - Simple 2-Delay Blatant!",
     Duration = 5,
     Icon = "check-circle"
 })
 
--- Show loaded config status
 if WEBHOOK_URL ~= "" or DISCONNECT_WEBHOOK_URL ~= "" then
     task.wait(2)
     WindUI:Notify({
