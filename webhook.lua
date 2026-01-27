@@ -1,9 +1,9 @@
 -- ==================== FISH IT WEBHOOK BY RADITYA ====================
--- Delta Executor (Android) Compatible Version - v3.0 DISCONNECT DETECTION
--- Enhanced Webhook + Disconnect Monitor
+-- Delta Executor (Android) Compatible Version - v3.1 AUTO SAVE CONFIG
+-- Enhanced Webhook + Disconnect Monitor + Chloe X Blatant Fishing
 
 print("=" .. string.rep("=", 50))
-print("🎣 Webhook By Raditya Loaded! (v3.0 + Disconnect Detection)")
+print("🎣 Webhook By Raditya Loaded! (v3.1 + Auto Save Config)")
 print("=" .. string.rep("=", 50))
 
 -- Load WindUI
@@ -17,6 +17,9 @@ local RunService = game:GetService("RunService")
 local Stats = game:GetService("Stats")
 local TeleportService = game:GetService("TeleportService")
 local GuiService = game:GetService("GuiService")
+
+-- ==================== CONFIG FILE PATH ====================
+local CONFIG_FILE = "RadityaWebhook_Config_v3.1.json"
 
 -- ==================== MOBILE COMPATIBILITY LAYER ====================
 local function isMobileExecutor()
@@ -50,6 +53,54 @@ local function mobileRequest(options)
             Error = tostring(response)
         }
     end
+end
+
+local function safeGetMetatable()
+    local funcs = {getrawmetatable, getmetatable}
+    for _, func in ipairs(funcs) do
+        if func then
+            local success, mt = pcall(function()
+                return func(game)
+            end)
+            if success and mt then return mt end
+        end
+    end
+    return nil
+end
+
+local function safeSetReadonly(tbl, state)
+    if not tbl then return false end
+    local funcs = {setreadonly, make_writeable, makewriteable, make_readonly}
+    for _, func in ipairs(funcs) do
+        if func then
+            local success = pcall(function() func(tbl, state) end)
+            if success then return true end
+        end
+    end
+    return false
+end
+
+local function safeNewCClosure(func)
+    local closureFuncs = {newcclosure, newlclosure}
+    for _, closureFunc in ipairs(closureFuncs) do
+        if closureFunc then
+            local success, result = pcall(closureFunc, func)
+            if success then return result end
+        end
+    end
+    return func
+end
+
+local function safeCheckCaller()
+    if checkcaller then return checkcaller() end
+    if is_protosmasher_caller then return is_protosmasher_caller() end
+    if get_calling_script then return get_calling_script() == nil end
+    return true
+end
+
+local function safeGetNamecallMethod()
+    if getnamecallmethod then return getnamecallmethod() end
+    return ""
 end
 
 -- ==================== LOAD CRITICAL MODULES ====================
@@ -98,22 +149,25 @@ local Remotes = {
 local WEBHOOK_URL = ""
 local DISCONNECT_WEBHOOK_URL = ""
 local DISCORD_USER_ID = ""
-local WEBHOOK_USERNAME = "Raditya Fish Notify v3.0"
+local WEBHOOK_USERNAME = "Raditya Fish Notify v3.1"
 local isWebhookEnabled = false
 local isDisconnectWebhookEnabled = false
 local SelectedRarityCategories = {}
 local SelectedWebhookItemNames = {}
 local ImageURLCache = {}
 
--- Blatant Fishing Configuration (FROM REFERENCE SCRIPT)
+-- Chloe X Blatant Fishing Configuration
 local blatantInstantState = false
 local blatantLoopThread = nil
 local blatantEquipThread = nil
-local isFishingInProgress = false
-local completeDelay = 0.1
-local cancelDelay = 0.05
-local loopInterval = 0.3
-_G.RockHub_BlatantActive = false
+_G.Instant = false
+local CancelWaitTime = 3
+local ResetTimer = 0.5
+local hasTriggeredBug = false
+local lastFishTime = 0
+local fishConnected = false
+local lastCancelTime = 0
+local hasFishingEffect = false
 
 -- Disconnect Detection
 local hasSentDisconnect = false
@@ -131,6 +185,66 @@ local performanceStats = {
     memory = 0,
     lastUpdate = 0
 }
+
+-- ==================== CONFIG SAVE/LOAD SYSTEM ====================
+local function SaveConfig()
+    local config = {
+        webhookUrl = WEBHOOK_URL,
+        disconnectWebhookUrl = DISCONNECT_WEBHOOK_URL,
+        discordUserId = DISCORD_USER_ID,
+        isWebhookEnabled = isWebhookEnabled,
+        isDisconnectWebhookEnabled = isDisconnectWebhookEnabled,
+        selectedRarities = SelectedRarityCategories,
+        selectedFishNames = SelectedWebhookItemNames,
+        blatantDelay = CancelWaitTime,
+        version = "3.1"
+    }
+    
+    local success, encoded = pcall(function()
+        return HttpService:JSONEncode(config)
+    end)
+    
+    if success and encoded then
+        writefile(CONFIG_FILE, encoded)
+        print("✅ Config saved successfully")
+        return true
+    else
+        warn("❌ Failed to save config")
+        return false
+    end
+end
+
+local function LoadConfig()
+    if not isfile(CONFIG_FILE) then
+        print("📁 No config file found, using defaults")
+        return false
+    end
+    
+    local success, result = pcall(function()
+        local fileContent = readfile(CONFIG_FILE)
+        return HttpService:JSONDecode(fileContent)
+    end)
+    
+    if success and result then
+        WEBHOOK_URL = result.webhookUrl or ""
+        DISCONNECT_WEBHOOK_URL = result.disconnectWebhookUrl or ""
+        DISCORD_USER_ID = result.discordUserId or ""
+        isWebhookEnabled = result.isWebhookEnabled or false
+        isDisconnectWebhookEnabled = result.isDisconnectWebhookEnabled or false
+        SelectedRarityCategories = result.selectedRarities or {}
+        SelectedWebhookItemNames = result.selectedFishNames or {}
+        CancelWaitTime = result.blatantDelay or 3
+        
+        print("✅ Config loaded successfully")
+        print("📨 Fish Webhook:", WEBHOOK_URL ~= "" and "Set" or "Empty")
+        print("🔔 Disconnect Webhook:", DISCONNECT_WEBHOOK_URL ~= "" and "Set" or "Empty")
+        
+        return true
+    else
+        warn("❌ Failed to load config, using defaults")
+        return false
+    end
+end
 
 -- ==================== PERFORMANCE MONITOR ====================
 task.spawn(function()
@@ -377,7 +491,7 @@ local function SendDisconnectWebhook(reason)
     local embed = {
         title = "⚠️ PLAYER DISCONNECTED",
         description = mentionText,
-        color = 0xFF0000, -- Red
+        color = 0xFF0000,
         fields = {
             {name = "👤 Player Name", value = string.format("`%s (@%s)`", playerName, displayName), inline = true},
             {name = "🆔 User ID", value = string.format("`%s`", userId), inline = true},
@@ -390,7 +504,7 @@ local function SendDisconnectWebhook(reason)
             url = "https://media.tenor.com/rx88bhLtmyUAAAAi/gawr-gura.gif"
         },
         footer = {
-            text = "Raditya Disconnect Monitor v3.0",
+            text = "Raditya Disconnect Monitor v3.1",
             icon_url = "https://i.imgur.com/WltO8IG.png"
         },
         timestamp = os.date("!%Y-%m-%dT%H:%M:%S")
@@ -419,7 +533,7 @@ local function StartDisconnectMonitor()
         end
     end)
     
-    -- Monitor OnTeleport (prevents double webhook on teleport)
+    -- Monitor OnTeleport
     LocalPlayer.OnTeleport:Connect(function(teleportState)
         if teleportState == Enum.TeleportState.Started then
             hasSentDisconnect = true
@@ -427,7 +541,7 @@ local function StartDisconnectMonitor()
         end
     end)
     
-    -- Monitor Player Removing (kick detection)
+    -- Monitor Player Removing
     Players.PlayerRemoving:Connect(function(player)
         if player == LocalPlayer and not hasSentDisconnect then
             SendDisconnectWebhook("Player was removed from server")
@@ -506,7 +620,7 @@ local function onFishObtained(itemId, metadata, fullData)
                 },
                 thumbnail = {url = imageUrl},
                 footer = {
-                    text = string.format("Raditya Webhook v3.0 • Total: %s • %s", 
+                    text = string.format("Raditya Webhook v3.1 • Total: %s • %s", 
                         caughtDisplay, os.date("%Y-%m-%d %H:%M:%S"))
                 },
                 timestamp = os.date("!%Y-%m-%dT%H:%M:%S")
@@ -542,59 +656,255 @@ if Remotes.ObtainedNewFishNotification then
     end)
 end
 
--- ==================== BLATANT FISHING SYSTEM (FROM REFERENCE) ====================
--- Instant fishing with proper sequencing
-local function runBlatantInstant()
-    if not blatantInstantState or isFishingInProgress then return end
+-- ==================== CHLOE X BLATANT FISHING SYSTEM ====================
+-- Logic Killer
+task.spawn(function()
+    local success, FishingController = pcall(function() 
+        return require(ReplicatedStorage.Controllers.FishingController) 
+    end)
     
-    isFishingInProgress = true
-    
-    task.spawn(function()
-        local success = pcall(function()
-            local timestamp = os.time() + os.clock()
-            
-            -- Step 1: Charge
-            if Remotes.ChargeFishingRod then
-                Remotes.ChargeFishingRod:InvokeServer(timestamp)
-            end
-            
-            task.wait(0.01)
-            
-            -- Step 2: Start minigame
-            if Remotes.RequestFishingMinigameStarted then
-                Remotes.RequestFishingMinigameStarted:InvokeServer(-139.6379699707, 0.99647927980797)
-            end
-            
-            task.wait(completeDelay)
-            
-            -- Step 3: Complete
-            if Remotes.FishingCompleted then
-                Remotes.FishingCompleted:FireServer()
-            end
-            
-            task.wait(cancelDelay)
-            
-            -- Step 4: Cancel
-            if Remotes.CancelFishingInputs then
-                Remotes.CancelFishingInputs:InvokeServer()
-            end
-        end)
+    if success and FishingController then
+        local Old_Charge = FishingController.RequestChargeFishingRod
+        local Old_Cast = FishingController.SendFishingRequestToServer
         
-        if not success then
-            warn("[Fishing Error] Cycle failed")
+        FishingController.RequestChargeFishingRod = function(...)
+            if _G.Instant then return end
+            return Old_Charge(...)
         end
         
-        isFishingInProgress = false
+        FishingController.SendFishingRequestToServer = function(...)
+            if _G.Instant then 
+                return false, "Blocked by Chloe X Blatant" 
+            end
+            return Old_Cast(...)
+        end
+        
+        print("✅ Fishing Controller hooked (Chloe X)")
+    end
+end)
+
+-- Remote Killer
+task.spawn(function()
+    local mt = safeGetMetatable()
+    if not mt then 
+        warn("[Chloe X] Metatable hook disabled")
+        return 
+    end
+    
+    local old_namecall = mt.__namecall
+    safeSetReadonly(mt, false)
+    
+    mt.__namecall = safeNewCClosure(function(self, ...)
+        local method = safeGetNamecallMethod()
+        
+        if _G.Instant and not safeCheckCaller() then
+            local remoteName = self.Name
+            
+            if method == "InvokeServer" then
+                if remoteName == "RequestFishingMinigameStarted" or 
+                   remoteName == "ChargeFishingRod" or 
+                   remoteName == "UpdateAutoFishingState" then
+                    return nil
+                end
+            elseif method == "FireServer" and remoteName == "FishingCompleted" then
+                return nil
+            end
+        end
+        
+        return old_namecall(self, ...)
+    end)
+    
+    safeSetReadonly(mt, true)
+    print("✅ Namecall hook installed (Chloe X)")
+end)
+
+-- Visual Suppressor
+local function SuppressGameVisuals(active)
+    pcall(function()
+        local TextController = require(ReplicatedStorage.Controllers.TextNotificationController)
+        
+        if active then
+            if not TextController._OldDeliver then 
+                TextController._OldDeliver = TextController.DeliverNotification 
+            end
+            
+            TextController.DeliverNotification = function(self, data)
+                if data and data.Text then
+                    local text = tostring(data.Text)
+                    if text:find("Auto Fishing") or text:find("Reach Level") then
+                        return
+                    end
+                end
+                return TextController._OldDeliver(self, data)
+            end
+        elseif TextController._OldDeliver then
+            TextController.DeliverNotification = TextController._OldDeliver
+            TextController._OldDeliver = nil
+        end
+    end)
+
+    if active then
+        task.spawn(function()
+            local CollectionService = game:GetService("CollectionService")
+            local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+            
+            local InactiveColor = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.fromHex("ff5d60")),
+                ColorSequenceKeypoint.new(1, Color3.fromHex("ff2256"))
+            })
+
+            while _G.Instant do
+                local targets = CollectionService:GetTagged("AutoFishingButton")
+                
+                if #targets == 0 then
+                    local btn = PlayerGui:FindFirstChild("Backpack")
+                    if btn then
+                        btn = btn:FindFirstChild("AutoFishingButton")
+                        if btn then targets = {btn} end
+                    end
+                end
+
+                for _, btn in ipairs(targets) do
+                    local grad = btn:FindFirstChild("UIGradient")
+                    if grad then 
+                        grad.Color = InactiveColor 
+                    end
+                end
+                
+                task.wait(0.1)
+            end
+        end)
+    end
+end
+
+-- Hook FishCaught for Chloe X
+if not fishConnected then
+    local success, FishingController = pcall(function() 
+        return require(ReplicatedStorage.Controllers.FishingController) 
+    end)
+    
+    if success and FishingController then
+        local OriginalFishCaught = FishingController.FishCaught
+        
+        function FishingController.FishCaught(...)
+            if _G.Instant then
+                lastFishTime = tick()
+            end
+            return OriginalFishCaught(...)
+        end
+        
+        fishConnected = true
+    end
+end
+
+-- Initial Bug Trigger (Chloe X Method)
+task.spawn(function()
+    repeat
+        task.wait(0.1)
+    until _G.Instant
+    
+    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    task.wait(0.1)
+    
+    if char:FindFirstChild("!!!FISHING_VIEW_MODEL!!!") then
+        pcall(function()
+            Remotes.EquipToolFromHotbar:FireServer(1)
+        end)
+    end
+    
+    task.wait(0.1)
+    
+    local cosmeticFolder = workspace:FindFirstChild("CosmeticFolder")
+    
+    if not hasTriggeredBug then
+        if cosmeticFolder and not cosmeticFolder:FindFirstChild(tostring(LocalPlayer.UserId)) then
+            pcall(function()
+                Remotes.ChargeFishingRod:InvokeServer(2)
+                Remotes.RequestFishingMinigameStarted:InvokeServer(-1.25, 1)
+            end)
+        end
+    end
+    
+    if cosmeticFolder and not cosmeticFolder:FindFirstChild(tostring(LocalPlayer.UserId)) then
+        pcall(function()
+            Remotes.ChargeFishingRod:InvokeServer(2)
+            Remotes.RequestFishingMinigameStarted:InvokeServer(-1.25, 1)
+        end)
+        
+        local startTime = tick()
+        local initialFishTime = lastFishTime
+        
+        while _G.Instant and lastFishTime == initialFishTime do
+            task.wait(0.1)
+        end
+        
+        if startTime < lastFishTime then
+            pcall(function()
+                Remotes.ChargeFishingRod:InvokeServer(2)
+                Remotes.RequestFishingMinigameStarted:InvokeServer(-1.25, 1)
+                Remotes.CancelFishingInputs:InvokeServer()
+                Remotes.ChargeFishingRod:InvokeServer(2)
+                Remotes.RequestFishingMinigameStarted:InvokeServer(-1.25, 1)
+            end)
+            hasTriggeredBug = true
+        end
+    end
+end)
+
+-- Completion Spam (Chloe X Method)
+task.spawn(function()
+    while task.wait(0.1) do
+        if _G.Instant then
+            repeat
+                task.wait(0.2)
+                pcall(function()
+                    Remotes.FishingCompleted:FireServer()
+                end)
+            until not _G.Instant
+        end
+    end
+end)
+
+-- Play Effect Detection
+local REPlayEffect = GetRemote(RPath, "RE/PlayFishingEffect")
+if REPlayEffect and typeof(REPlayEffect) == "Instance" and REPlayEffect:IsA("RemoteEvent") then
+    REPlayEffect.OnClientEvent:Connect(function(player, _, effectType)
+        if player == LocalPlayer and effectType == 2 then
+            hasFishingEffect = true
+        end
     end)
 end
 
+-- Cancel on Timeout (Chloe X Method)
+task.spawn(function()
+    while true do
+        repeat
+            task.wait(CancelWaitTime)
+        until _G.Instant
+        
+        local currentTime = tick()
+        
+        if not hasFishingEffect and currentTime - lastFishTime > CancelWaitTime - ResetTimer then
+            pcall(function()
+                Remotes.CancelFishingInputs:InvokeServer()
+            end)
+            lastCancelTime = currentTime
+        end
+        
+        hasFishingEffect = false
+    end
+end)
+
 -- ==================== CREATE WINDUI ====================
+-- Load saved config first
+LoadConfig()
+
 local Window = WindUI:CreateWindow({
-    Title = "Raditya Webhook + Disconnect v3.0",
+    Title = "Raditya Webhook v3.1 (Auto Save)",
     Icon = "rbxassetid://116236936447443",
-    Author = "Raditya (Disconnect Update)",
-    Folder = "RadityaWebhookV3",
-    Size = UDim2.fromOffset(620, 450),
+    Author = "Raditya (Chloe X Blatant)",
+    Folder = "RadityaWebhookV31",
+    Size = UDim2.fromOffset(640, 480),
     MinSize = Vector2.new(560, 250),
     MaxSize = Vector2.new(950, 760),
     Transparent = true,
@@ -626,18 +936,21 @@ local webhooksec = WebhookTab:Section({
 webhooksec:Input({
     Title = "Discord Webhook URL",
     Placeholder = "https://discord.com/api/webhooks/...",
+    Value = WEBHOOK_URL,
     Callback = function(input) 
         WEBHOOK_URL = input 
-        print("Fish Webhook URL updated")
+        SaveConfig()
+        print("Fish Webhook URL updated & saved")
     end
 })
 
 webhooksec:Toggle({
     Title = "Enable Fish Notifications",
     Description = "Send caught fish to Discord",
-    Value = false,
+    Value = isWebhookEnabled,
     Callback = function(state)
         isWebhookEnabled = state
+        SaveConfig()
         local msg = state and "Fish Webhook Enabled!" or "Fish Webhook Disabled!"
         local icon = state and "check" or "x"
         WindUI:Notify({Title = msg, Duration = 3, Icon = icon})
@@ -650,9 +963,11 @@ webhooksec:Dropdown({
     Values = getWebhookItemOptions(),
     Multi = true,
     AllowNone = true,
+    Default = SelectedWebhookItemNames,
     Callback = function(names) 
         SelectedWebhookItemNames = names or {} 
-        print(string.format("Selected %d fish names", #SelectedWebhookItemNames))
+        SaveConfig()
+        print(string.format("Selected %d fish names & saved", #SelectedWebhookItemNames))
     end
 })
 
@@ -662,12 +977,14 @@ webhooksec:Dropdown({
     Values = {"Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Secret"},
     Multi = true,
     AllowNone = true,
+    Default = SelectedRarityCategories,
     Callback = function(categories)
         SelectedRarityCategories = {}
         for _, cat in ipairs(categories or {}) do
             table.insert(SelectedRarityCategories, cat:upper())
         end
-        print(string.format("Selected %d rarities", #SelectedRarityCategories))
+        SaveConfig()
+        print(string.format("Selected %d rarities & saved", #SelectedRarityCategories))
     end
 })
 
@@ -687,15 +1004,15 @@ webhooksec:Button({
         end
         
         local testEmbed = {
-            title = "🎣 Raditya Fish Webhook Test (v3.0)",
-            description = "Test successful from updated script!",
+            title = "🎣 Raditya Fish Webhook Test (v3.1)",
+            description = "Test successful! Config auto-saved!",
             color = 0x00FF00,
             fields = {
                 {name = "Executor", value = identifyexecutor and identifyexecutor() or "Unknown", inline = true},
                 {name = "User", value = LocalPlayer.Name, inline = true},
                 {name = "FPS", value = tostring(performanceStats.fps), inline = true}
             },
-            footer = {text = "Raditya Webhook v3.0"},
+            footer = {text = "Raditya Webhook v3.1 - Chloe X Blatant"},
             timestamp = os.date("!%Y-%m-%dT%H:%M:%S")
         }
         
@@ -717,9 +1034,11 @@ disconnectSec:Input({
     Title = "Disconnect Webhook URL",
     Placeholder = "https://discord.com/api/webhooks/...",
     Description = "Separate webhook for disconnect alerts",
+    Value = DISCONNECT_WEBHOOK_URL,
     Callback = function(input)
         DISCONNECT_WEBHOOK_URL = input
-        print("Disconnect Webhook URL updated")
+        SaveConfig()
+        print("Disconnect Webhook URL updated & saved")
     end
 })
 
@@ -727,18 +1046,21 @@ disconnectSec:Input({
     Title = "Discord User ID (Optional)",
     Placeholder = "123456789012345678",
     Description = "Your Discord ID for @ mentions",
+    Value = DISCORD_USER_ID,
     Callback = function(input)
         DISCORD_USER_ID = input:gsub("%D", "")
-        print("Discord User ID updated:", DISCORD_USER_ID)
+        SaveConfig()
+        print("Discord User ID updated & saved:", DISCORD_USER_ID)
     end
 })
 
 disconnectSec:Toggle({
     Title = "Enable Disconnect Alerts",
     Description = "Get notified when disconnected",
-    Value = false,
+    Value = isDisconnectWebhookEnabled,
     Callback = function(state)
         isDisconnectWebhookEnabled = state
+        SaveConfig()
         
         if state then
             if DISCONNECT_WEBHOOK_URL == "" then
@@ -784,7 +1106,7 @@ disconnectSec:Button({
             return
         end
         
-        hasSentDisconnect = false -- Reset flag for testing
+        hasSentDisconnect = false
         SendDisconnectWebhook("Manual Test - Disconnect Detection")
         WindUI:Notify({
             Title = "Test Sent!",
@@ -817,84 +1139,38 @@ local FishingTab = Window:Tab({
 })
 
 local blatant = FishingTab:Section({
-    Title = "Blatant Instant Fishing",
-    Description = "Optimized fishing automation"
+    Title = "Chloe X Blatant Fishing",
+    Description = "Advanced instant fishing system"
 })
 
 blatant:Input({
-    Title = "Loop Interval (seconds)",
-    Description = "Time between fishing cycles",
-    Value = tostring(loopInterval),
-    Placeholder = "0.3",
+    Title = "Cancel Wait Time (seconds)",
+    Description = "Delay before auto-cancel",
+    Value = tostring(CancelWaitTime),
+    Placeholder = "3",
     Callback = function(input)
         local val = tonumber(input)
-        if val and val >= 0.1 and val <= 5 then 
-            loopInterval = val 
-            print("Loop interval:", val)
-        end
-    end
-})
-
-blatant:Input({
-    Title = "Complete Delay (seconds)",
-    Description = "Delay before completing",
-    Value = tostring(completeDelay),
-    Placeholder = "0.1",
-    Callback = function(input)
-        local val = tonumber(input)
-        if val and val >= 0.05 and val <= 1 then 
-            completeDelay = val 
-            print("Complete delay:", val)
-        end
-    end
-})
-
-blatant:Input({
-    Title = "Cancel Delay (seconds)",
-    Description = "Delay before canceling",
-    Value = tostring(cancelDelay),
-    Placeholder = "0.05",
-    Callback = function(input)
-        local val = tonumber(input)
-        if val and val >= 0.01 and val <= 1 then 
-            cancelDelay = val 
-            print("Cancel delay:", val)
+        if val and val >= 1 and val <= 10 then 
+            CancelWaitTime = val 
+            SaveConfig()
+            print("Cancel Wait Time set to:", val)
         end
     end
 })
 
 blatant:Toggle({
-    Title = "Enable Instant Fishing",
-    Description = "Blatant mode - very fast",
+    Title = "Enable Chloe X Blatant Fishing",
+    Description = "Instant fishing with advanced hooks",
     Value = false,
     Callback = function(state)
-        blatantInstantState = state
-        _G.RockHub_BlatantActive = state
+        _G.Instant = state
+        
+        SuppressGameVisuals(state)
         
         if state then
-            -- Enable auto fishing
-            if Remotes.UpdateAutoFishingState then
-                pcall(function() 
-                    Remotes.UpdateAutoFishingState:InvokeServer(true) 
-                end)
-                task.wait(0.5)
-                pcall(function() 
-                    Remotes.UpdateAutoFishingState:InvokeServer(true) 
-                end)
-            end
-
-            -- Start fishing loop
-            blatantLoopThread = task.spawn(function()
-                while blatantInstantState do
-                    runBlatantInstant()
-                    task.wait(loopInterval)
-                end
-            end)
-
-            -- Keep rod equipped
-            if blatantEquipThread then task.cancel(blatantEquipThread) end
-            blatantEquipThread = task.spawn(function()
-                while blatantInstantState do
+            -- Auto-equip rod
+            task.spawn(function()
+                while _G.Instant do
                     if Remotes.EquipToolFromHotbar then
                         pcall(function() 
                             Remotes.EquipToolFromHotbar:FireServer(1) 
@@ -905,33 +1181,18 @@ blatant:Toggle({
             end)
             
             WindUI:Notify({
-                Title = "Blatant Mode ON", 
-                Content = "Instant fishing activated!",
+                Title = "Chloe X Blatant ON", 
+                Content = "Advanced fishing activated!",
                 Duration = 3, 
                 Icon = "zap"
             })
         else
-            -- Disable auto fishing
-            if Remotes.UpdateAutoFishingState then
-                pcall(function() 
-                    Remotes.UpdateAutoFishingState:InvokeServer(false) 
-                end)
-            end
-            
-            -- Stop threads
-            if blatantLoopThread then 
-                task.cancel(blatantLoopThread) 
-                blatantLoopThread = nil 
-            end
-            if blatantEquipThread then 
-                task.cancel(blatantEquipThread) 
-                blatantEquipThread = nil 
-            end
-            
-            isFishingInProgress = false
+            pcall(function()
+                Remotes.CancelFishingInputs:InvokeServer()
+            end)
             
             WindUI:Notify({
-                Title = "Blatant Mode OFF", 
+                Title = "Chloe X Blatant OFF", 
                 Duration = 2,
                 Icon = "x"
             })
@@ -940,48 +1201,196 @@ blatant:Toggle({
 })
 
 blatant:Paragraph({
-    Title = "⚠️ Warning",
-    Content = "Blatant mode is detectable. Use at your own risk. Lower delays = faster but more obvious."
+    Title = "ℹ️ How It Works",
+    Content = [[
+Chloe X Blatant uses advanced hooks:
+✅ Controller method hijacking
+✅ Namecall interception  
+✅ Visual suppression
+✅ Auto bug triggering
+✅ Smart timeout canceling
+
+More stable than basic instant fishing!
+]]
 })
 
--- ==================== MISC TAB ====================
-local MiscTab = Window:Tab({
+-- ==================== CONFIG TAB ====================
+local ConfigTab = Window:Tab({
+    Title = "Config",
+    Icon = "save",
+})
+
+local configSec = ConfigTab:Section({
+    Title = "Configuration Management",
+})
+
+configSec:Paragraph({
+    Title = "🔄 Auto Save System",
+    Content = [[
+Your settings are automatically saved:
+✅ Webhook URLs
+✅ Discord User ID  
+✅ Filter settings (rarity & names)
+✅ Blatant fishing delays
+✅ Toggle states
+
+Config loads on script execution!
+]]
+})
+
+configSec:Button({
+    Title = "💾 Save Config Now",
+    Description = "Manually save current settings",
+    Icon = "save",
+    Callback = function()
+        if SaveConfig() then
+            WindUI:Notify({
+                Title = "Config Saved!",
+                Content = "All settings saved successfully",
+                Duration = 3,
+                Icon = "check"
+            })
+        else
+            WindUI:Notify({
+                Title = "Save Failed!",
+                Content = "Could not save config",
+                Duration = 3,
+                Icon = "x"
+            })
+        end
+    end
+})
+
+configSec:Button({
+    Title = "🔄 Reload Config",
+    Description = "Load saved settings",
+    Icon = "refresh-cw",
+    Callback = function()
+        if LoadConfig() then
+            WindUI:Notify({
+                Title = "Config Loaded!",
+                Content = "Settings restored from save",
+                Duration = 3,
+                Icon = "check"
+            })
+        else
+            WindUI:Notify({
+                Title = "Load Failed!",
+                Content = "No config file found",
+                Duration = 3,
+                Icon = "x"
+            })
+        end
+    end
+})
+
+configSec:Button({
+    Title = "🗑️ Delete Config",
+    Description = "Reset all settings to default",
+    Icon = "trash-2",
+    Callback = function()
+        if isfile(CONFIG_FILE) then
+            delfile(CONFIG_FILE)
+            WindUI:Notify({
+                Title = "Config Deleted!",
+                Content = "All settings reset. Restart script to apply.",
+                Duration = 4,
+                Icon = "trash-2"
+            })
+        else
+            WindUI:Notify({
+                Title = "No Config!",
+                Content = "No saved config to delete",
+                Duration = 3,
+                Icon = "info"
+            })
+        end
+    end
+})
+
+local configInfo = ConfigTab:Section({
+    Title = "Current Configuration",
+})
+
+local configDisplay = configInfo:Paragraph({
+    Title = "📋 Loaded Settings",
+    Content = "Loading..."
+})
+
+task.spawn(function()
+    while task.wait(2) do
+        pcall(function()
+            local info = string.format([[
+Fish Webhook: %s
+Disconnect Webhook: %s
+Discord ID: %s
+Fish Webhook: %s
+Disconnect Monitor: %s
+Selected Rarities: %d
+Selected Fish: %d
+Blatant Delay: %.1fs
+]],
+                WEBHOOK_URL ~= "" and "✅ Set" or "❌ Empty",
+                DISCONNECT_WEBHOOK_URL ~= "" and "✅ Set" or "❌ Empty",
+                DISCORD_USER_ID ~= "" and "✅ Set" or "❌ Empty",
+                isWebhookEnabled and "🟢 ON" or "🔴 OFF",
+                isDisconnectWebhookEnabled and "🟢 ON" or "🔴 OFF",
+                #SelectedRarityCategories,
+                #SelectedWebhookItemNames,
+                CancelWaitTime
+            )
+            
+            configDisplay:SetContent(info)
+        end)
+    end
+end)
+
+-- ==================== INFO TAB ====================
+local InfoTab = Window:Tab({
     Title = "Info",
     Icon = "info",
 })
 
-local infoSec = MiscTab:Section({
+local infoSec = InfoTab:Section({
     Title = "Script Information",
 })
 
 infoSec:Paragraph({
-    Title = "Version & Features",
+    Title = "📦 Version & Features",
     Content = [[
-Version: v3.0 - Disconnect Detection Update
+Version: v3.1 - Auto Save Config
+
+✨ New in v3.1:
+- Auto save/load configuration
+- Chloe X blatant fishing
+- Config management tab
+- Improved stability
 
 Features:
-- Discord Fish Webhook
-- Disconnect Alerts with @ mention
-- Blatant Instant Fishing
-- Mobile Compatibility
-- Real-time Stats
+✅ Discord Fish Webhook
+✅ Disconnect Alerts
+✅ Auto Config Save
+✅ Chloe X Blatant
+✅ Mobile Support
 ]]
 })
 
 infoSec:Paragraph({
-    Title = "Disconnect Monitor",
+    Title = "🎣 Blatant Fishing Info",
     Content = [[
-The disconnect monitor will automatically:
-✅ Detect kicks/disconnects
-✅ Send webhook with reason
-✅ Tag your Discord (if ID set)
-✅ Show last stats (coins, fish)
-⚠️ Won't trigger on teleports
+Now using Chloe X method:
+✅ More stable than basic instant
+✅ Controller hijacking
+✅ Visual suppression
+✅ Auto bug triggering
+✅ Smart timeout handling
+
+Recommended delay: 2-3 seconds
 ]]
 })
 
-local perfSec = MiscTab:Section({
-    Title = "Performance",
+local perfSec = InfoTab:Section({
+    Title = "Performance Monitor",
 })
 
 local fpsLabel = perfSec:Paragraph({
@@ -1009,17 +1418,35 @@ task.spawn(function()
     end
 end)
 
+-- ==================== AUTO-START DISCONNECT MONITOR ====================
+if isDisconnectWebhookEnabled and DISCONNECT_WEBHOOK_URL ~= "" then
+    StartDisconnectMonitor()
+    print("✅ Auto-started disconnect monitor from saved config")
+end
+
 -- ==================== FINAL NOTIFICATIONS ====================
 print("=" .. string.rep("=", 50))
-print("✅ Raditya Webhook + Disconnect v3.0 Loaded!")
+print("✅ Raditya Webhook v3.1 Loaded!")
+print("💾 Config System: Auto Save/Load")
 print("📨 Fish Webhook System Ready")
 print("🔔 Disconnect Monitor Ready")
-print("🎣 Blatant Fishing Ready")
+print("🎣 Chloe X Blatant Fishing Ready")
 print("=" .. string.rep("=", 50))
 
 WindUI:Notify({
     Title = "Script Loaded!",
-    Content = "Raditya v3.0 - Disconnect Detection Added!",
+    Content = "Raditya v3.1 - Auto Save Config + Chloe X!",
     Duration = 5,
     Icon = "check-circle"
 })
+
+-- Show loaded config status
+if WEBHOOK_URL ~= "" or DISCONNECT_WEBHOOK_URL ~= "" then
+    task.wait(2)
+    WindUI:Notify({
+        Title = "Config Loaded!",
+        Content = "Previous settings restored automatically",
+        Duration = 4,
+        Icon = "database"
+    })
+end
