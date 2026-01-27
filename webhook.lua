@@ -1,9 +1,9 @@
 -- ==================== FISH IT WEBHOOK BY RADITYA ====================
--- Delta Executor (Android) Compatible Version - FIXED
--- Performance Monitor + Fixed Blatant Fishing
+-- Delta Executor (Android) Compatible Version - UPDATED v2.0
+-- Enhanced Performance + Stability Improvements
 
 print("=" .. string.rep("=", 50))
-print("🎣 Webhook By Raditya Loaded! (Delta Fixed)")
+print("🎣 Webhook By Raditya Loaded! (v2.0 Updated)")
 print("=" .. string.rep("=", 50))
 
 -- Load WindUI
@@ -15,44 +15,62 @@ local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local RunService = game:GetService("RunService")
 local Stats = game:GetService("Stats")
+local TeleportService = game:GetService("TeleportService")
 
 -- ==================== MOBILE COMPATIBILITY LAYER ====================
 local function isMobileExecutor()
-    return identifyexecutor and (identifyexecutor():lower():find("delta") or identifyexecutor():lower():find("mobile"))
+    if not identifyexecutor then return false end
+    local execName = identifyexecutor():lower()
+    return execName:find("delta") or execName:find("mobile") or execName:find("android")
 end
 
 local function mobileRequest(options)
-    local requestFunc = http_request or request or syn and syn.request
+    local requestFunc = http_request or request or (syn and syn.request) or httprequest
     
     if not requestFunc then
         warn("[Delta Compat] No request function found!")
-        return {Success = false, StatusCode = 0}
+        return {Success = false, StatusCode = 0, Error = "No HTTP function available"}
     end
     
     local success, response = pcall(function()
         return requestFunc(options)
     end)
     
-    if success then
-        return {Success = true, StatusCode = response.StatusCode or response.Code or 200}
+    if success and response then
+        return {
+            Success = true, 
+            StatusCode = response.StatusCode or response.Code or 200,
+            Body = response.Body
+        }
     else
-        return {Success = false, StatusCode = 0, Error = tostring(response)}
+        return {
+            Success = false, 
+            StatusCode = 0, 
+            Error = tostring(response)
+        }
     end
 end
 
 local function safeGetMetatable()
-    local success, mt = pcall(function()
-        return getrawmetatable(game)
-    end)
-    return success and mt or nil
+    local funcs = {getrawmetatable, getmetatable}
+    for _, func in ipairs(funcs) do
+        if func then
+            local success, mt = pcall(function()
+                return func(game)
+            end)
+            if success and mt then return mt end
+        end
+    end
+    return nil
 end
 
 local function safeSetReadonly(tbl, state)
-    local funcs = {setreadonly, make_writeable, makewriteable}
+    if not tbl then return false end
+    local funcs = {setreadonly, make_writeable, makewriteable, make_readonly}
     for _, func in ipairs(funcs) do
         if func then
-            pcall(function() func(tbl, state) end)
-            return true
+            local success = pcall(function() func(tbl, state) end)
+            if success then return true end
         end
     end
     return false
@@ -76,136 +94,183 @@ local function safeCheckCaller()
     return true
 end
 
+local function safeGetNamecallMethod()
+    if getnamecallmethod then return getnamecallmethod() end
+    return ""
+end
+
 -- ==================== LOAD CRITICAL MODULES ====================
-local ItemUtility = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("ItemUtility", 10))
-local TierUtility = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("TierUtility", 10))
+local ItemUtility, TierUtility
+
+local function loadModules()
+    local success = pcall(function()
+        ItemUtility = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("ItemUtility", 10))
+        TierUtility = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("TierUtility", 10))
+    end)
+    
+    if not success then
+        warn("[Module Load] Failed to load ItemUtility/TierUtility")
+    end
+    
+    return success
+end
+
+loadModules()
 
 -- ==================== REMOTES ====================
 local RPath = {"Packages", "_Index", "sleitnick_net@0.2.0", "net"}
+
 local function GetRemote(remotePath, name, timeout)
     local currentInstance = ReplicatedStorage
     for _, childName in ipairs(remotePath) do
-        currentInstance = currentInstance:WaitForChild(childName, timeout or 0.5)
+        currentInstance = currentInstance:WaitForChild(childName, timeout or 1)
         if not currentInstance then return nil end
     end
     return currentInstance:FindFirstChild(name)
 end
 
-local RE_EquipToolFromHotbar = GetRemote(RPath, "RE/EquipToolFromHotbar")
-local RF_ChargeFishingRod = GetRemote(RPath, "RF/ChargeFishingRod")
-local RF_RequestFishingMinigameStarted = GetRemote(RPath, "RF/RequestFishingMinigameStarted")
-local RE_FishingCompleted = GetRemote(RPath, "RE/FishingCompleted")
-local RF_CancelFishingInputs = GetRemote(RPath, "RF/CancelFishingInputs")
-local RF_UpdateAutoFishingState = GetRemote(RPath, "RF/UpdateAutoFishingState")
-local REObtainedNewFishNotification = GetRemote(RPath, "RE/ObtainedNewFishNotification")
+-- Cache remotes
+local Remotes = {
+    EquipToolFromHotbar = GetRemote(RPath, "RE/EquipToolFromHotbar"),
+    ChargeFishingRod = GetRemote(RPath, "RF/ChargeFishingRod"),
+    RequestFishingMinigameStarted = GetRemote(RPath, "RF/RequestFishingMinigameStarted"),
+    FishingCompleted = GetRemote(RPath, "RE/FishingCompleted"),
+    CancelFishingInputs = GetRemote(RPath, "RF/CancelFishingInputs"),
+    UpdateAutoFishingState = GetRemote(RPath, "RF/UpdateAutoFishingState"),
+    ObtainedNewFishNotification = GetRemote(RPath, "RE/ObtainedNewFishNotification")
+}
 
 -- ==================== VARIABLES ====================
--- Webhook
+-- Webhook Configuration
 local WEBHOOK_URL = ""
-local WEBHOOK_USERNAME = "Raditya Fish Notify"
+local WEBHOOK_USERNAME = "Raditya Fish Notify v2.0"
 local isWebhookEnabled = false
 local SelectedRarityCategories = {}
 local SelectedWebhookItemNames = {}
 local ImageURLCache = {}
 
--- Blatant Fishing - FIXED TIMING
+-- Blatant Fishing Configuration
 local blatantInstantState = false
 local blatantLoopThread = nil
 local blatantEquipThread = nil
 local isFishingInProgress = false
-local completeDelay = 0.1  -- FIXED: Reduced delay
-local cancelDelay = 0.05   -- FIXED: Faster cancel
-local loopInterval = 0.3   -- FIXED: Faster loop
+local completeDelay = 0.08
+local cancelDelay = 0.04
+local loopInterval = 0.25
 _G.RockHub_BlatantActive = false
 
--- Stats
+-- Statistics
 local totalFishCaught = 0
 local successfulWebhooks = 0
+local failedWebhooks = 0
 
--- Performance Stats - REAL TIME
+-- Performance Statistics
 local performanceStats = {
     fps = 0,
     ping = 0,
+    memory = 0,
     lastUpdate = 0
 }
 
--- ==================== PERFORMANCE MONITOR (REAL) ====================
+-- ==================== PERFORMANCE MONITOR ====================
 task.spawn(function()
-    while true do
+    while task.wait(0.5) do
         local now = os.clock()
         if now - performanceStats.lastUpdate >= 0.5 then
-            -- REAL FPS from workspace physics
+            -- Real FPS
             performanceStats.fps = math.floor(workspace:GetRealPhysicsFPS())
             
-            -- REAL PING from network stats
-            local networkStats = Stats.Network.ServerStatsItem
-            local pingValue = networkStats["Data Ping"]
-            if pingValue then
-                performanceStats.ping = math.floor(pingValue:GetValue())
+            -- Real Ping
+            local success = pcall(function()
+                local networkStats = Stats.Network.ServerStatsItem
+                local pingValue = networkStats["Data Ping"]
+                if pingValue then
+                    performanceStats.ping = math.floor(pingValue:GetValue())
+                end
+            end)
+            
+            if not success then
+                performanceStats.ping = 0
             end
+            
+            -- Memory usage
+            local memStats = Stats:GetMemoryUsageMbForTag(Enum.DeveloperMemoryTag.Instances)
+            performanceStats.memory = math.floor(memStats)
             
             performanceStats.lastUpdate = now
         end
-        task.wait(0.1)
     end
 end)
 
 -- ==================== HELPER FUNCTIONS ====================
 local function FormatNumber(n)
-    n = math.floor(n)
-    local formatted = tostring(n):reverse():gsub("%d%d%d", "%1."):reverse()
+    if not n then return "0" end
+    n = math.floor(tonumber(n) or 0)
+    local formatted = tostring(n):reverse():gsub("(%d%d%d)", "%1."):reverse()
     return formatted:gsub("^%.", "")
 end
 
 local function GetPlayerDataReplion()
-    local ReplionModule = ReplicatedStorage:WaitForChild("Packages"):WaitForChild("Replion", 5)
-    if not ReplionModule then return nil end
-    return require(ReplionModule).Client:WaitReplion("Data", 5)
+    local success, replion = pcall(function()
+        local ReplionModule = ReplicatedStorage:WaitForChild("Packages"):WaitForChild("Replion", 5)
+        if not ReplionModule then return nil end
+        return require(ReplionModule).Client:WaitReplion("Data", 5)
+    end)
+    
+    return success and replion or nil
 end
 
 local function GetFishNameAndRarity(item)
     local name = item.Identifier or "Unknown"
-    local rarity = item.Metadata and item.Metadata.Rarity or "COMMON"
+    local rarity = "COMMON"
     local itemID = item.Id
 
-    local itemData = nil
     if ItemUtility and itemID then
+        local itemData = nil
         pcall(function()
             itemData = ItemUtility:GetItemData(itemID)
             if not itemData then
                 local numericID = tonumber(item.Id) or tonumber(item.Identifier)
-                if numericID then itemData = ItemUtility:GetItemData(numericID) end
+                if numericID then 
+                    itemData = ItemUtility:GetItemData(numericID)
+                end
             end
         end)
-    end
 
-    if itemData and itemData.Data and itemData.Data.Name then
-        name = itemData.Data.Name
-    end
+        if itemData and itemData.Data and itemData.Data.Name then
+            name = itemData.Data.Name
+        end
 
-    if item.Metadata and item.Metadata.Rarity then
-        rarity = item.Metadata.Rarity
-    elseif itemData and itemData.Probability and itemData.Probability.Chance and TierUtility then
-        local tierObj = nil
-        pcall(function()
-            tierObj = TierUtility:GetTierFromRarity(itemData.Probability.Chance)
-        end)
-        if tierObj and tierObj.Name then rarity = tierObj.Name end
+        if item.Metadata and item.Metadata.Rarity then
+            rarity = item.Metadata.Rarity
+        elseif itemData and itemData.Probability and itemData.Probability.Chance and TierUtility then
+            pcall(function()
+                local tierObj = TierUtility:GetTierFromRarity(itemData.Probability.Chance)
+                if tierObj and tierObj.Name then 
+                    rarity = tierObj.Name 
+                end
+            end)
+        end
     end
 
     return name, rarity
 end
 
 local function GetItemMutationString(item)
-    if item.Metadata and item.Metadata.Shiny == true then return "Shiny" end
-    return item.Metadata and item.Metadata.VariantId or ""
+    if not item.Metadata then return "" end
+    if item.Metadata.Shiny == true then return "✨ Shiny" end
+    return item.Metadata.VariantId or ""
 end
 
 local function GetRobloxAssetImage(assetId)
     if not assetId or assetId == 0 then return nil end
     if ImageURLCache[assetId] then return ImageURLCache[assetId] end
     
-    local url = string.format("https://thumbnails.roblox.com/v1/assets?assetIds=%d&size=420x420&format=Png&isCircular=false", assetId)
+    local url = string.format(
+        "https://thumbnails.roblox.com/v1/assets?assetIds=%d&size=420x420&format=Png&isCircular=false", 
+        assetId
+    )
+    
     local success, response = pcall(game.HttpGet, game, url)
     
     if success then
@@ -216,43 +281,58 @@ local function GetRobloxAssetImage(assetId)
             return finalUrl
         end
     end
+    
     return nil
 end
 
 local function getRarityColor(rarity)
-    local r = rarity:upper()
-    if r == "SECRET" or r == "DEV" then return 0xFFD700 end
-    if r == "MYTHIC" then return 0x9400D3 end
-    if r == "LEGENDARY" then return 0xFF4500 end
-    if r == "EPIC" then return 0x8A2BE2 end
-    if r == "RARE" then return 0x0000FF end
-    if r == "UNCOMMON" then return 0x00FF00 end
-    return 0x00BFFF
+    local colorMap = {
+        SECRET = 0xFFD700,
+        DEV = 0xFFD700,
+        MYTHIC = 0x9400D3,
+        LEGENDARY = 0xFF4500,
+        EPIC = 0x8A2BE2,
+        RARE = 0x0000FF,
+        UNCOMMON = 0x00FF00,
+        COMMON = 0x00BFFF
+    }
+    
+    return colorMap[rarity:upper()] or 0x00BFFF
 end
 
 local function getWebhookItemOptions()
     local itemNames = {}
     local itemsContainer = ReplicatedStorage:FindFirstChild("Items")
+    
     if itemsContainer then
         for _, itemObject in ipairs(itemsContainer:GetChildren()) do
             local itemName = itemObject.Name
-            if type(itemName) == "string" and #itemName >= 3 and itemName:sub(1, 3) ~= "!!!" then
+            if type(itemName) == "string" and #itemName >= 3 and not itemName:match("^!!!") then
                 table.insert(itemNames, itemName)
             end
         end
     end
+    
     table.sort(itemNames)
     return itemNames
 end
 
 -- ==================== WEBHOOK SYSTEM ====================
 local function sendExploitWebhook(url, username, embed_data)
+    if not url or url == "" then 
+        return false, "Empty URL" 
+    end
+    
     local payload = {
         username = username,
         embeds = {embed_data}
     }
     
-    local json_data = HttpService:JSONEncode(payload)
+    local success, json_data = pcall(HttpService.JSONEncode, HttpService, payload)
+    if not success then
+        return false, "JSON Encode Error"
+    end
+    
     local response = mobileRequest({
         Url = url,
         Method = "POST",
@@ -263,7 +343,8 @@ local function sendExploitWebhook(url, username, embed_data)
     if response.Success and (response.StatusCode == 200 or response.StatusCode == 204) then
         return true, "Sent"
     end
-    return false, "Failed"
+    
+    return false, response.Error or "HTTP Error"
 end
 
 local function shouldNotify(fishRarityUpper, fishMetadata, fishName)
@@ -285,7 +366,8 @@ local function onFishObtained(itemId, metadata, fullData)
         local fishWeight = string.format("%.2fkg", metadata.Weight or 0)
         local mutationString = GetItemMutationString(dummyItem)
         local mutationDisplay = mutationString ~= "" and mutationString or "N/A"
-        local itemData = ItemUtility:GetItemData(itemId)
+        
+        local itemData = ItemUtility and ItemUtility:GetItemData(itemId)
         
         local assetId = nil
         if itemData and itemData.Data then
@@ -295,41 +377,42 @@ local function onFishObtained(itemId, metadata, fullData)
             end
         end
 
-        local imageUrl = assetId and GetRobloxAssetImage(assetId)
-        if not imageUrl then
-            imageUrl = "https://tr.rbxcdn.com/53eb9b170bea9855c45c9356fb33c070/420/420/Image/Png"
-        end
+        local imageUrl = assetId and GetRobloxAssetImage(assetId) or 
+                        "https://tr.rbxcdn.com/53eb9b170bea9855c45c9356fb33c070/420/420/Image/Png"
         
-        local basePrice = itemData and itemData.SellPrice or 0
+        local basePrice = (itemData and itemData.SellPrice) or 0
         local sellPrice = basePrice * (metadata.SellMultiplier or 1)
-        local formattedSellPrice = string.format("%s$", FormatNumber(sellPrice))
+        local formattedSellPrice = FormatNumber(sellPrice) .. "$"
         
+        local caughtDisplay = "N/A"
         local leaderstats = LocalPlayer:FindFirstChild("leaderstats")
-        local caughtStat = leaderstats and leaderstats:FindFirstChild("Caught")
-        local caughtDisplay = caughtStat and FormatNumber(caughtStat.Value) or "N/A"
+        if leaderstats then
+            local caughtStat = leaderstats:FindFirstChild("Caught")
+            if caughtStat then
+                caughtDisplay = FormatNumber(caughtStat.Value)
+            end
+        end
 
         local currentCoins = 0
         local replion = GetPlayerDataReplion()
         if replion then
-            local success_curr, CurrencyConfig = pcall(function()
-                return require(ReplicatedStorage.Modules.CurrencyUtility.Currency)
+            pcall(function()
+                local CurrencyConfig = require(ReplicatedStorage.Modules.CurrencyUtility.Currency)
+                if CurrencyConfig and CurrencyConfig["Coins"] then
+                    currentCoins = replion:Get(CurrencyConfig["Coins"].Path) or 0
+                else
+                    currentCoins = replion:Get("Coins") or replion:Get({"Coins"}) or 0
+                end
             end)
-            if success_curr and CurrencyConfig and CurrencyConfig["Coins"] then
-                currentCoins = replion:Get(CurrencyConfig["Coins"].Path) or 0
-            else
-                currentCoins = replion:Get("Coins") or replion:Get({"Coins"}) or 0
-            end
         end
         local formattedCoins = FormatNumber(currentCoins)
 
         local isUserFilterMatch = shouldNotify(fishRarityUpper, metadata, fishName)
 
         if isWebhookEnabled and WEBHOOK_URL ~= "" and isUserFilterMatch then
-            local title_private = string.format("🎣 Raditya Fish Webhook\n\n🐟 New Fish Caught! (%s)", fishName)
-            
             local embed = {
-                title = title_private,
-                description = string.format("Found by **%s**.", LocalPlayer.DisplayName or LocalPlayer.Name),
+                title = string.format("🎣 New Fish Caught! (%s)", fishName),
+                description = string.format("Caught by **%s**", LocalPlayer.DisplayName or LocalPlayer.Name),
                 color = getRarityColor(fishRarityUpper),
                 fields = {
                     {name = "🐟 Fish Name", value = string.format("`%s`", fishName), inline = true},
@@ -337,18 +420,25 @@ local function onFishObtained(itemId, metadata, fullData)
                     {name = "⚖️ Weight", value = string.format("`%s`", fishWeight), inline = true},
                     {name = "✨ Mutation", value = string.format("`%s`", mutationDisplay), inline = true},
                     {name = "💰 Sell Price", value = string.format("`%s`", formattedSellPrice), inline = true},
-                    {name = "💵 Current Coins", value = string.format("`%s`", formattedCoins), inline = true},
+                    {name = "💵 Coins", value = string.format("`%s`", formattedCoins), inline = true},
+                    {name = "📊 Performance", value = string.format("`FPS: %d | Ping: %dms`", 
+                        performanceStats.fps, performanceStats.ping), inline = false}
                 },
                 thumbnail = {url = imageUrl},
                 footer = {
-                    text = string.format("Webhook By Raditya • Total Caught: %s • %s", caughtDisplay, os.date("%Y-%m-%d %H:%M:%S"))
-                }
+                    text = string.format("Raditya Webhook v2.0 • Total: %s • %s", 
+                        caughtDisplay, os.date("%Y-%m-%d %H:%M:%S"))
+                },
+                timestamp = os.date("!%Y-%m-%dT%H:%M:%S")
             }
             
             local success_send, message = sendExploitWebhook(WEBHOOK_URL, WEBHOOK_USERNAME, embed)
             if success_send then
                 successfulWebhooks = successfulWebhooks + 1
-                print("✅ Webhook sent:", fishName)
+                print(string.format("✅ Webhook sent: %s (%s)", fishName, fishRarityUpper))
+            else
+                failedWebhooks = failedWebhooks + 1
+                warn(string.format("❌ Webhook failed: %s", message))
             end
         end
         
@@ -356,24 +446,30 @@ local function onFishObtained(itemId, metadata, fullData)
     end)
     
     if not success then
-        warn("[Raditya Webhook] Error:", results)
+        warn("[Fish Obtained Error]:", results)
     end
 end
 
-if REObtainedNewFishNotification then
-    REObtainedNewFishNotification.OnClientEvent:Connect(function(itemId, metadata, fullData)
+-- Hook fish notification
+if Remotes.ObtainedNewFishNotification then
+    Remotes.ObtainedNewFishNotification.OnClientEvent:Connect(function(itemId, metadata, fullData)
         totalFishCaught = totalFishCaught + 1
-        pcall(function() onFishObtained(itemId, metadata, fullData) end)
+        task.spawn(function()
+            pcall(function() 
+                onFishObtained(itemId, metadata, fullData) 
+            end)
+        end)
     end)
 end
 
--- ==================== BLATANT FISHING SYSTEM - FIXED ====================
+-- ==================== BLATANT FISHING SYSTEM ====================
 -- Logic Killer
 task.spawn(function()
-    local S1, FishingController = pcall(function() 
+    local success, FishingController = pcall(function() 
         return require(ReplicatedStorage.Controllers.FishingController) 
     end)
-    if S1 and FishingController then
+    
+    if success and FishingController then
         local Old_Charge = FishingController.RequestChargeFishingRod
         local Old_Cast = FishingController.SendFishingRequestToServer
         
@@ -381,10 +477,15 @@ task.spawn(function()
             if _G.RockHub_BlatantActive then return end
             return Old_Charge(...)
         end
+        
         FishingController.SendFishingRequestToServer = function(...)
-            if _G.RockHub_BlatantActive then return false, "Blocked by Raditya" end
+            if _G.RockHub_BlatantActive then 
+                return false, "Blocked by Raditya v2.0" 
+            end
             return Old_Cast(...)
         end
+        
+        print("✅ Fishing Controller hooked successfully")
     end
 end)
 
@@ -392,7 +493,7 @@ end)
 task.spawn(function()
     local mt = safeGetMetatable()
     if not mt then 
-        warn("[Delta Compat] Could not get metatable - namecall hook disabled")
+        warn("[Delta Compat] Metatable hook disabled")
         return 
     end
     
@@ -400,34 +501,45 @@ task.spawn(function()
     safeSetReadonly(mt, false)
     
     mt.__namecall = safeNewCClosure(function(self, ...)
-        local method = getnamecallmethod()
+        local method = safeGetNamecallMethod()
+        
         if _G.RockHub_BlatantActive and not safeCheckCaller() then
-            if method == "InvokeServer" and (self.Name == "RequestFishingMinigameStarted" or self.Name == "ChargeFishingRod" or self.Name == "UpdateAutoFishingState") then
-                return nil
-            end
-            if method == "FireServer" and self.Name == "FishingCompleted" then
+            local remoteName = self.Name
+            
+            if method == "InvokeServer" then
+                if remoteName == "RequestFishingMinigameStarted" or 
+                   remoteName == "ChargeFishingRod" or 
+                   remoteName == "UpdateAutoFishingState" then
+                    return nil
+                end
+            elseif method == "FireServer" and remoteName == "FishingCompleted" then
                 return nil
             end
         end
+        
         return old_namecall(self, ...)
     end)
     
     safeSetReadonly(mt, true)
+    print("✅ Namecall hook installed")
 end)
 
 -- Visual Suppressor
 local function SuppressGameVisuals(active)
-    local Succ, TextController = pcall(function() 
-        return require(ReplicatedStorage.Controllers.TextNotificationController) 
-    end)
-    if Succ and TextController then
+    pcall(function()
+        local TextController = require(ReplicatedStorage.Controllers.TextNotificationController)
+        
         if active then
             if not TextController._OldDeliver then 
                 TextController._OldDeliver = TextController.DeliverNotification 
             end
+            
             TextController.DeliverNotification = function(self, data)
-                if data and data.Text and (string.find(tostring(data.Text), "Auto Fishing") or string.find(tostring(data.Text), "Reach Level")) then
-                    return
+                if data and data.Text then
+                    local text = tostring(data.Text)
+                    if text:find("Auto Fishing") or text:find("Reach Level") then
+                        return
+                    end
                 end
                 return TextController._OldDeliver(self, data)
             end
@@ -435,12 +547,12 @@ local function SuppressGameVisuals(active)
             TextController.DeliverNotification = TextController._OldDeliver
             TextController._OldDeliver = nil
         end
-    end
+    end)
 
     if active then
         task.spawn(function()
             local CollectionService = game:GetService("CollectionService")
-            local PlayerGui = LocalPlayer.PlayerGui
+            local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
             
             local InactiveColor = ColorSequence.new({
                 ColorSequenceKeypoint.new(0, Color3.fromHex("ff5d60")),
@@ -448,71 +560,69 @@ local function SuppressGameVisuals(active)
             })
 
             while _G.RockHub_BlatantActive do
-                local targets = {}
-                for _, btn in ipairs(CollectionService:GetTagged("AutoFishingButton")) do
-                    table.insert(targets, btn)
-                end
+                local targets = CollectionService:GetTagged("AutoFishingButton")
                 
                 if #targets == 0 then
-                    local btn = PlayerGui:FindFirstChild("Backpack") and PlayerGui.Backpack:FindFirstChild("AutoFishingButton")
-                    if btn then table.insert(targets, btn) end
+                    local btn = PlayerGui:FindFirstChild("Backpack")
+                    if btn then
+                        btn = btn:FindFirstChild("AutoFishingButton")
+                        if btn then targets = {btn} end
+                    end
                 end
 
                 for _, btn in ipairs(targets) do
                     local grad = btn:FindFirstChild("UIGradient")
-                    if grad then grad.Color = InactiveColor end
+                    if grad then 
+                        grad.Color = InactiveColor 
+                    end
                 end
                 
-                RunService.RenderStepped:Wait()
+                task.wait(0.1)
             end
         end)
     end
 end
 
--- FIXED: Instant fishing with proper sequencing
+-- Instant Fishing Core
 local function runBlatantInstant()
     if not blatantInstantState or isFishingInProgress then return end
     
     isFishingInProgress = true
     
     task.spawn(function()
-        local timestamp = os.time() + os.clock()
-        
-        -- Step 1: Charge rod
-        local chargeSuccess = pcall(function() 
-            RF_ChargeFishingRod:InvokeServer(timestamp) 
+        local success = pcall(function()
+            local timestamp = os.time() + os.clock()
+            
+            -- Step 1: Charge
+            if Remotes.ChargeFishingRod then
+                Remotes.ChargeFishingRod:InvokeServer(timestamp)
+            end
+            
+            task.wait(0.01)
+            
+            -- Step 2: Start minigame
+            if Remotes.RequestFishingMinigameStarted then
+                Remotes.RequestFishingMinigameStarted:InvokeServer(-139.6379699707, 0.99647927980797)
+            end
+            
+            task.wait(completeDelay)
+            
+            -- Step 3: Complete
+            if Remotes.FishingCompleted then
+                Remotes.FishingCompleted:FireServer()
+            end
+            
+            task.wait(cancelDelay)
+            
+            -- Step 4: Cancel
+            if Remotes.CancelFishingInputs then
+                Remotes.CancelFishingInputs:InvokeServer()
+            end
         end)
         
-        if not chargeSuccess then
-            isFishingInProgress = false
-            return
+        if not success then
+            warn("[Fishing Error] Cycle failed")
         end
-        
-        task.wait(0.01)
-        
-        -- Step 2: Start minigame
-        local minigameSuccess = pcall(function() 
-            RF_RequestFishingMinigameStarted:InvokeServer(-139.6379699707, 0.99647927980797) 
-        end)
-        
-        if not minigameSuccess then
-            isFishingInProgress = false
-            return
-        end
-        
-        task.wait(completeDelay)
-        
-        -- Step 3: Complete fishing
-        pcall(function() 
-            RE_FishingCompleted:FireServer() 
-        end)
-        
-        task.wait(cancelDelay)
-        
-        -- Step 4: Cancel/reset
-        pcall(function() 
-            RF_CancelFishingInputs:InvokeServer() 
-        end)
         
         isFishingInProgress = false
     end)
@@ -520,11 +630,11 @@ end
 
 -- ==================== CREATE WINDUI ====================
 local Window = WindUI:CreateWindow({
-    Title = "Raditya Webhook + Fishing (Fixed)",
+    Title = "Raditya Webhook + Fishing v2.0",
     Icon = "rbxassetid://116236936447443",
-    Author = "Raditya",
-    Folder = "RadityaWebhook",
-    Size = UDim2.fromOffset(600, 400),
+    Author = "Raditya (Updated)",
+    Folder = "RadityaWebhookV2",
+    Size = UDim2.fromOffset(620, 420),
     MinSize = Vector2.new(560, 250),
     MaxSize = Vector2.new(950, 760),
     Transparent = true,
@@ -534,7 +644,13 @@ local Window = WindUI:CreateWindow({
 })
 
 if isMobileExecutor() then
-    print("✅ Delta Mobile Executor detected!")
+    print("✅ Mobile Executor detected!")
+    WindUI:Notify({
+        Title = "Mobile Detected",
+        Content = "Delta/Mobile compatibility enabled!",
+        Duration = 4,
+        Icon = "smartphone"
+    })
 end
 
 -- ==================== WEBHOOK TAB ====================
@@ -544,38 +660,45 @@ local WebhookTab = Window:Tab({
 })
 
 local webhooksec = WebhookTab:Section({
-    Title = "Webhook Setup",
+    Title = "Webhook Configuration",
 })
 
 webhooksec:Input({
     Title = "Discord Webhook URL",
     Placeholder = "https://discord.com/api/webhooks/...",
-    Callback = function(input) WEBHOOK_URL = input end
+    Callback = function(input) 
+        WEBHOOK_URL = input 
+        print("Webhook URL updated")
+    end
 })
 
 webhooksec:Toggle({
     Title = "Enable Fish Notifications",
+    Description = "Send caught fish to Discord",
     Value = false,
     Callback = function(state)
         isWebhookEnabled = state
-        if state then
-            WindUI:Notify({Title = "Webhook ON!", Duration = 3, Icon = "check"})
-        else
-            WindUI:Notify({Title = "Webhook OFF!", Duration = 3, Icon = "x"})
-        end
+        local msg = state and "Webhook Enabled!" or "Webhook Disabled!"
+        local icon = state and "check" or "x"
+        WindUI:Notify({Title = msg, Duration = 3, Icon = icon})
     end
 })
 
 webhooksec:Dropdown({
-    Title = "Filter by Name",
+    Title = "Filter by Fish Name",
+    Description = "Select specific fish to notify",
     Values = getWebhookItemOptions(),
     Multi = true,
     AllowNone = true,
-    Callback = function(names) SelectedWebhookItemNames = names or {} end
+    Callback = function(names) 
+        SelectedWebhookItemNames = names or {} 
+        print(string.format("Selected %d fish names", #SelectedWebhookItemNames))
+    end
 })
 
 webhooksec:Dropdown({
     Title = "Filter by Rarity",
+    Description = "Select rarities to notify",
     Values = {"Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Secret"},
     Multi = true,
     AllowNone = true,
@@ -584,38 +707,58 @@ webhooksec:Dropdown({
         for _, cat in ipairs(categories or {}) do
             table.insert(SelectedRarityCategories, cat:upper())
         end
+        print(string.format("Selected %d rarities", #SelectedRarityCategories))
     end
 })
 
 webhooksec:Button({
     Title = "Test Webhook",
+    Description = "Send a test message",
     Icon = "send",
     Callback = function()
         if WEBHOOK_URL == "" then
-            WindUI:Notify({Title = "Error", Content = "Enter webhook URL first!", Duration = 3})
+            WindUI:Notify({
+                Title = "Error", 
+                Content = "Enter webhook URL first!", 
+                Duration = 3,
+                Icon = "alert-circle"
+            })
             return
         end
+        
         local testEmbed = {
-            title = "🎣 Raditya Webhook Test (Fixed)",
-            description = "Success from Delta Executor!",
+            title = "🎣 Raditya Webhook Test (v2.0)",
+            description = "Test successful from updated script!",
             color = 0x00FF00,
-            footer = {text = "Webhook By Raditya - Fixed Version"}
+            fields = {
+                {name = "Executor", value = identifyexecutor and identifyexecutor() or "Unknown", inline = true},
+                {name = "User", value = LocalPlayer.Name, inline = true},
+                {name = "FPS", value = tostring(performanceStats.fps), inline = true}
+            },
+            footer = {text = "Raditya Webhook v2.0"},
+            timestamp = os.date("!%Y-%m-%dT%H:%M:%S")
         }
-        sendExploitWebhook(WEBHOOK_URL, WEBHOOK_USERNAME, testEmbed)
-        WindUI:Notify({Title = "Test Sent!", Duration = 3})
+        
+        local success, msg = sendExploitWebhook(WEBHOOK_URL, WEBHOOK_USERNAME, testEmbed)
+        if success then
+            WindUI:Notify({Title = "Test Sent!", Content = "Check your Discord!", Duration = 3, Icon = "check"})
+        else
+            WindUI:Notify({Title = "Test Failed!", Content = msg, Duration = 3, Icon = "x"})
+        end
     end
 })
 
 local StatsSection = WebhookTab:Section({Title = "Statistics"})
 local fishLabel = StatsSection:Paragraph({Title = "Fish Caught: 0", Content = ""})
 local webhookLabel = StatsSection:Paragraph({Title = "Webhooks Sent: 0", Content = ""})
+local failedLabel = StatsSection:Paragraph({Title = "Failed: 0", Content = ""})
 
 task.spawn(function()
-    while true do
-        task.wait(1)
+    while task.wait(1) do
         pcall(function()
-            fishLabel:SetTitle("Fish Caught: " .. tostring(totalFishCaught))
-            webhookLabel:SetTitle("Webhooks Sent: " .. tostring(successfulWebhooks))
+            fishLabel:SetTitle("Fish Caught: " .. FormatNumber(totalFishCaught))
+            webhookLabel:SetTitle("Webhooks Sent: " .. FormatNumber(successfulWebhooks))
+            failedLabel:SetTitle("Failed: " .. FormatNumber(failedWebhooks))
         end)
     end
 end)
@@ -627,41 +770,55 @@ local FishingTab = Window:Tab({
 })
 
 local blatant = FishingTab:Section({
-    Title = "Blatant Instant Fishing (FIXED)",
+    Title = "Blatant Instant Fishing",
+    Description = "Optimized fishing automation"
 })
 
 blatant:Input({
     Title = "Loop Interval (seconds)",
+    Description = "Time between fishing cycles",
     Value = tostring(loopInterval),
-    Placeholder = "0.3",
+    Placeholder = "0.25",
     Callback = function(input)
         local val = tonumber(input)
-        if val and val >= 0.1 then loopInterval = val end
+        if val and val >= 0.1 and val <= 5 then 
+            loopInterval = val 
+            print("Loop interval:", val)
+        end
     end
 })
 
 blatant:Input({
     Title = "Complete Delay (seconds)",
+    Description = "Delay before completing",
     Value = tostring(completeDelay),
-    Placeholder = "0.1",
+    Placeholder = "0.08",
     Callback = function(input)
         local val = tonumber(input)
-        if val and val >= 0.05 then completeDelay = val end
+        if val and val >= 0.05 and val <= 1 then 
+            completeDelay = val 
+            print("Complete delay:", val)
+        end
     end
 })
 
 blatant:Input({
     Title = "Cancel Delay (seconds)",
+    Description = "Delay before canceling",
     Value = tostring(cancelDelay),
-    Placeholder = "0.05",
+    Placeholder = "0.04",
     Callback = function(input)
         local val = tonumber(input)
-        if val and val >= 0.01 then cancelDelay = val end
+        if val and val >= 0.01 and val <= 1 then 
+            cancelDelay = val 
+            print("Cancel delay:", val)
+        end
     end
 })
 
 blatant:Toggle({
-    Title = "Enable Instant Fishing (Blatant)",
+    Title = "Enable Instant Fishing",
+    Description = "Blatant mode - very fast",
     Value = false,
     Callback = function(state)
         blatantInstantState = state
@@ -670,12 +827,18 @@ blatant:Toggle({
         SuppressGameVisuals(state)
         
         if state then
-            if RF_UpdateAutoFishingState then
-                pcall(function() RF_UpdateAutoFishingState:InvokeServer(true) end)
+            -- Enable auto fishing
+            if Remotes.UpdateAutoFishingState then
+                pcall(function() 
+                    Remotes.UpdateAutoFishingState:InvokeServer(true) 
+                end)
                 task.wait(0.5)
-                pcall(function() RF_UpdateAutoFishingState:InvokeServer(true) end)
+                pcall(function() 
+                    Remotes.UpdateAutoFishingState:InvokeServer(true) 
+                end)
             end
 
+            -- Start fishing loop
             blatantLoopThread = task.spawn(function()
                 while blatantInstantState do
                     runBlatantInstant()
@@ -683,25 +846,57 @@ blatant:Toggle({
                 end
             end)
 
+            -- Keep rod equipped
             if blatantEquipThread then task.cancel(blatantEquipThread) end
             blatantEquipThread = task.spawn(function()
                 while blatantInstantState do
-                    pcall(function() RE_EquipToolFromHotbar:FireServer(1) end)
+                    if Remotes.EquipToolFromHotbar then
+                        pcall(function() 
+                            Remotes.EquipToolFromHotbar:FireServer(1) 
+                        end)
+                    end
                     task.wait(0.5)
                 end
             end)
             
-            WindUI:Notify({Title = "Blatant Mode ON", Duration = 3, Icon = "zap"})
+            WindUI:Notify({
+                Title = "Blatant Mode ON", 
+                Content = "Instant fishing activated!",
+                Duration = 3, 
+                Icon = "zap"
+            })
         else
-            if RF_UpdateAutoFishingState then
-                pcall(function() RF_UpdateAutoFishingState:InvokeServer(false) end)
+            -- Disable auto fishing
+            if Remotes.UpdateAutoFishingState then
+                pcall(function() 
+                    Remotes.UpdateAutoFishingState:InvokeServer(false) 
+                end)
             end
-            if blatantLoopThread then task.cancel(blatantLoopThread) blatantLoopThread = nil end
-            if blatantEquipThread then task.cancel(blatantEquipThread) blatantEquipThread = nil end
+            
+            -- Stop threads
+            if blatantLoopThread then 
+                task.cancel(blatantLoopThread) 
+                blatantLoopThread = nil 
+            end
+            if blatantEquipThread then 
+                task.cancel(blatantEquipThread) 
+                blatantEquipThread = nil 
+            end
+            
             isFishingInProgress = false
-            WindUI:Notify({Title = "Stopped", Duration = 2})
+            
+            WindUI:Notify({
+                Title = "Blatant Mode OFF", 
+                Duration = 2,
+                Icon = "x"
+            })
         end
     end
+})
+
+blatant:Paragraph({
+    Title = "⚠️ Warning",
+    Content = "Blatant mode is detectable. Use at your own risk. Lower delays = faster but more obvious."
 })
 
 -- ==================== MISC TAB ====================
@@ -711,75 +906,79 @@ local MiscTab = Window:Tab({
 })
 
 local miscSec = MiscTab:Section({
-    Title = "Miscellaneous Features",
+    Title = "Utility Features",
 })
 
--- FPS Overlay Variables
+-- FPS Overlay
 local fpsOverlayEnabled = false
 local fpsOverlayGui = nil
 
 local function createFPSOverlay()
-    -- Remove old overlay if exists
     if fpsOverlayGui then
         fpsOverlayGui:Destroy()
         fpsOverlayGui = nil
     end
     
-    -- Create ScreenGui
     fpsOverlayGui = Instance.new("ScreenGui")
     fpsOverlayGui.Name = "RadityaFPSOverlay"
     fpsOverlayGui.ResetOnSpawn = false
     fpsOverlayGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     
-    -- Create Frame background
     local frame = Instance.new("Frame")
     frame.Name = "FPSFrame"
-    frame.Size = UDim2.new(0, 200, 0, 80)
+    frame.Size = UDim2.new(0, 220, 0, 90)
     frame.Position = UDim2.new(0, 10, 0, 10)
     frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    frame.BackgroundTransparency = 0.3
+    frame.BackgroundTransparency = 0.25
     frame.BorderSizePixel = 0
     frame.Parent = fpsOverlayGui
     
-    -- Add UICorner
     local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 8)
+    corner.CornerRadius = UDim.new(0, 10)
     corner.Parent = frame
     
-    -- Add UIStroke
     local stroke = Instance.new("UIStroke")
     stroke.Color = Color3.fromRGB(255, 105, 180)
     stroke.Thickness = 2
-    stroke.Transparency = 0.5
+    stroke.Transparency = 0.4
     stroke.Parent = frame
     
-    -- FPS Label
     local fpsLabel = Instance.new("TextLabel")
     fpsLabel.Name = "FPSLabel"
-    fpsLabel.Size = UDim2.new(1, -10, 0, 30)
+    fpsLabel.Size = UDim2.new(1, -10, 0, 28)
     fpsLabel.Position = UDim2.new(0, 5, 0, 5)
     fpsLabel.BackgroundTransparency = 1
     fpsLabel.Text = "FPS: --"
     fpsLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    fpsLabel.TextSize = 20
+    fpsLabel.TextSize = 18
     fpsLabel.Font = Enum.Font.GothamBold
     fpsLabel.TextXAlignment = Enum.TextXAlignment.Left
     fpsLabel.Parent = frame
     
-    -- Ping Label
     local pingLabel = Instance.new("TextLabel")
     pingLabel.Name = "PingLabel"
-    pingLabel.Size = UDim2.new(1, -10, 0, 30)
-    pingLabel.Position = UDim2.new(0, 5, 0, 40)
+    pingLabel.Size = UDim2.new(1, -10, 0, 28)
+    pingLabel.Position = UDim2.new(0, 5, 0, 33)
     pingLabel.BackgroundTransparency = 1
     pingLabel.Text = "Ping: --"
     pingLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    pingLabel.TextSize = 20
+    pingLabel.TextSize = 18
     pingLabel.Font = Enum.Font.GothamBold
     pingLabel.TextXAlignment = Enum.TextXAlignment.Left
     pingLabel.Parent = frame
     
-    -- Parent to CoreGui or PlayerGui
+    local memLabel = Instance.new("TextLabel")
+    memLabel.Name = "MemLabel"
+    memLabel.Size = UDim2.new(1, -10, 0, 24)
+    memLabel.Position = UDim2.new(0, 5, 0, 61)
+    memLabel.BackgroundTransparency = 1
+    memLabel.Text = "Mem: -- MB"
+    memLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    memLabel.TextSize = 14
+    memLabel.Font = Enum.Font.Gotham
+    memLabel.TextXAlignment = Enum.TextXAlignment.Left
+    memLabel.Parent = frame
+    
     local success = pcall(function()
         fpsOverlayGui.Parent = game:GetService("CoreGui")
     end)
@@ -788,37 +987,37 @@ local function createFPSOverlay()
         fpsOverlayGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
     end
     
-    -- Update loop
     task.spawn(function()
-        while fpsOverlayEnabled and fpsOverlayGui do
+        while fpsOverlayEnabled and fpsOverlayGui and fpsOverlayGui.Parent do
             task.wait(0.5)
-            
-            if not fpsOverlayGui or not fpsOverlayGui.Parent then break end
             
             local fps = performanceStats.fps
             local ping = performanceStats.ping
+            local mem = performanceStats.memory
             
-            -- Update FPS with color
-            local fpsColor = Color3.fromRGB(0, 255, 0) -- Green
+            -- FPS coloring
+            local fpsColor = Color3.fromRGB(0, 255, 0)
             if fps < 30 then
-                fpsColor = Color3.fromRGB(255, 0, 0) -- Red
+                fpsColor = Color3.fromRGB(255, 0, 0)
             elseif fps < 50 then
-                fpsColor = Color3.fromRGB(255, 255, 0) -- Yellow
+                fpsColor = Color3.fromRGB(255, 255, 0)
+            end
+            
+            -- Ping coloring
+            local pingColor = Color3.fromRGB(0, 255, 0)
+            if ping > 200 then
+                pingColor = Color3.fromRGB(255, 0, 0)
+            elseif ping > 100 then
+                pingColor = Color3.fromRGB(255, 255, 0)
             end
             
             fpsLabel.Text = string.format("FPS: %d", fps)
             fpsLabel.TextColor3 = fpsColor
             
-            -- Update Ping with color
-            local pingColor = Color3.fromRGB(0, 255, 0) -- Green
-            if ping > 200 then
-                pingColor = Color3.fromRGB(255, 0, 0) -- Red
-            elseif ping > 100 then
-                pingColor = Color3.fromRGB(255, 255, 0) -- Yellow
-            end
-            
             pingLabel.Text = string.format("Ping: %d ms", ping)
             pingLabel.TextColor3 = pingColor
+            
+            memLabel.Text = string.format("Mem: %d MB", mem)
         end
     end)
 end
@@ -830,19 +1029,27 @@ local function removeFPSOverlay()
     end
 end
 
--- FPS Overlay Toggle
 miscSec:Toggle({
-    Title = "Show FPS & Ping",
-    Description = "Display real-time FPS and Ping on screen",
+    Title = "Show FPS & Ping Overlay",
+    Description = "Real-time performance stats on screen",
     Value = false,
     Callback = function(state)
         fpsOverlayEnabled = state
         if state then
             createFPSOverlay()
-            WindUI:Notify({Title = "FPS Overlay ON", Content = "Real-time stats displayed!", Duration = 3, Icon = "eye"})
+            WindUI:Notify({
+                Title = "Overlay Enabled", 
+                Content = "Performance stats visible!",
+                Duration = 3, 
+                Icon = "eye"
+            })
         else
             removeFPSOverlay()
-            WindUI:Notify({Title = "FPS Overlay OFF", Duration = 2, Icon = "eye-off"})
+            WindUI:Notify({
+                Title = "Overlay Disabled", 
+                Duration = 2, 
+                Icon = "eye-off"
+            })
         end
     end
 })
@@ -864,30 +1071,40 @@ miscSec:Toggle({
                 VirtualUser:CaptureController()
                 VirtualUser:ClickButton2(Vector2.new())
             end)
-            WindUI:Notify({Title = "Anti-AFK ON", Duration = 3, Icon = "shield"})
+            WindUI:Notify({
+                Title = "Anti-AFK Enabled", 
+                Duration = 3, 
+                Icon = "shield"
+            })
         else
             if antiAFKConnection then
                 antiAFKConnection:Disconnect()
                 antiAFKConnection = nil
             end
-            WindUI:Notify({Title = "Anti-AFK OFF", Duration = 2, Icon = "shield-off"})
+            WindUI:Notify({
+                Title = "Anti-AFK Disabled", 
+                Duration = 2, 
+                Icon = "shield-off"
+            })
         end
     end
 })
 
 -- Auto Reconnect
+local autoReconnectEnabled = false
+
 miscSec:Toggle({
     Title = "Auto Reconnect",
-    Description = "Automatically rejoin if disconnected",
+    Description = "Auto rejoin if disconnected",
     Value = false,
     Callback = function(state)
+        autoReconnectEnabled = state
+        
         if state then
             task.spawn(function()
-                local TeleportService = game:GetService("TeleportService")
                 local CoreGui = game:GetService("CoreGui")
                 
-                -- Monitor for disconnect prompts
-                local function checkForDisconnect()
+                local function setupReconnect()
                     local success = pcall(function()
                         CoreGui.RobloxPromptGui.promptOverlay.ChildAdded:Connect(function(child)
                             if child.Name == 'ErrorPrompt' and child:FindFirstChild("MessageArea") then
@@ -898,7 +1115,6 @@ miscSec:Toggle({
                     end)
                     
                     if not success then
-                        -- Fallback method
                         game:GetService("GuiService").ErrorMessageChanged:Connect(function()
                             task.wait(1)
                             TeleportService:Teleport(game.PlaceId, LocalPlayer)
@@ -906,11 +1122,22 @@ miscSec:Toggle({
                     end
                 end
                 
-                checkForDisconnect()
+                setupReconnect()
             end)
-            WindUI:Notify({Title = "Auto Reconnect ON", Duration = 3, Icon = "refresh-cw"})
+            
+            WindUI:Notify({
+                Title = "Auto Reconnect ON", 
+                Content = "Will rejoin automatically",
+                Duration = 3, 
+                Icon = "refresh-cw"
+            })
         else
-            WindUI:Notify({Title = "Auto Reconnect OFF", Content = "Restart script to disable", Duration = 3, Icon = "x"})
+            WindUI:Notify({
+                Title = "Auto Reconnect OFF", 
+                Content = "Restart script to fully disable",
+                Duration = 3, 
+                Icon = "x"
+            })
         end
     end
 })
@@ -920,17 +1147,52 @@ miscSec:Button({
     Description = "Manually rejoin current server",
     Icon = "repeat",
     Callback = function()
-        game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
     end
 })
 
--- ==================== PERFORMANCE TAB (INFO ONLY) ====================
-local PerformanceTab = Window:Tab({
+miscSec:Button({
+    Title = "Server Hop",
+    Description = "Join a different server",
+    Icon = "shuffle",
+    Callback = function()
+        local success = pcall(function()
+            local servers = game.HttpService:JSONDecode(
+                game:HttpGet(string.format(
+                    "https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Asc&limit=100", 
+                    game.PlaceId
+                ))
+            )
+            
+            if servers and servers.data then
+                for _, server in pairs(servers.data) do
+                    if server.id ~= game.JobId then
+                        TeleportService:TeleportToPlaceInstance(game.PlaceId, server.id, LocalPlayer)
+                        break
+                    end
+                end
+            end
+        end)
+        
+        if not success then
+            WindUI:Notify({
+                Title = "Server Hop Failed", 
+                Content = "Trying alternate method...",
+                Duration = 3,
+                Icon = "alert-circle"
+            })
+            TeleportService:Teleport(game.PlaceId, LocalPlayer)
+        end
+    end
+})
+
+-- ==================== INFO TAB ====================
+local InfoTab = Window:Tab({
     Title = "Info",
     Icon = "info",
 })
 
-local perfSec = PerformanceTab:Section({
+local perfSec = InfoTab:Section({
     Title = "Performance Information",
 })
 
@@ -941,18 +1203,22 @@ local fpsInfoLabel = perfSec:Paragraph({
 
 local pingInfoLabel = perfSec:Paragraph({
     Title = "Ping: Calculating...",
-    Content = "Network latency in milliseconds"
+    Content = "Network latency (milliseconds)"
 })
 
--- Real-time update loop for info tab
+local memInfoLabel = perfSec:Paragraph({
+    Title = "Memory: Calculating...",
+    Content = "Instance memory usage"
+})
+
 task.spawn(function()
-    while true do
-        task.wait(0.5)
+    while task.wait(0.5) do
         pcall(function()
             local fps = performanceStats.fps
             local ping = performanceStats.ping
+            local mem = performanceStats.memory
             
-            -- Color coding for FPS
+            -- FPS status
             local fpsStatus = "🟢"
             if fps < 30 then
                 fpsStatus = "🔴"
@@ -960,7 +1226,7 @@ task.spawn(function()
                 fpsStatus = "🟡"
             end
             
-            -- Color coding for Ping
+            -- Ping status
             local pingStatus = "🟢"
             if ping > 200 then
                 pingStatus = "🔴"
@@ -968,25 +1234,98 @@ task.spawn(function()
                 pingStatus = "🟡"
             end
             
+            -- Memory status
+            local memStatus = "🟢"
+            if mem > 1000 then
+                memStatus = "🔴"
+            elseif mem > 500 then
+                memStatus = "🟡"
+            end
+            
             fpsInfoLabel:SetTitle(string.format("%s FPS: %d", fpsStatus, fps))
             pingInfoLabel:SetTitle(string.format("%s Ping: %d ms", pingStatus, ping))
+            memInfoLabel:SetTitle(string.format("%s Memory: %d MB", memStatus, mem))
         end)
     end
 end)
 
 perfSec:Paragraph({
     Title = "Performance Guide",
-    Content = "🟢 Good • 🟡 Medium • 🔴 Poor\n\nFPS: 60+ (Good), 30-59 (Medium), <30 (Poor)\nPing: <100ms (Good), 100-200ms (Medium), >200ms (Poor)"
+    Content = [[
+🟢 Good • 🟡 Medium • 🔴 Poor
+
+FPS: 60+ (Good), 30-59 (Medium), <30 (Poor)
+Ping: <100ms (Good), 100-200ms (Medium), >200ms (Poor)
+Memory: <500MB (Good), 500-1000MB (Medium), >1000MB (Poor)
+]]
 })
 
-perfSec:Paragraph({
-    Title = "Delta Compatibility",
-    Content = "This script is optimized for Delta Executor on Android devices. All mobile-specific functions are handled automatically."
+local infoSec = InfoTab:Section({
+    Title = "Script Information",
 })
 
-print("✅ Raditya Webhook + Fishing System Loaded! (FIXED)")
+infoSec:Paragraph({
+    Title = "Version",
+    Content = "v2.0 - Updated Build"
+})
+
+infoSec:Paragraph({
+    Title = "Author",
+    Content = "Raditya (Enhanced by AI)"
+})
+
+infoSec:Paragraph({
+    Title = "Executor Compatibility",
+    Content = string.format([[
+Current Executor: %s
+
+✅ Delta (Android)
+✅ Mobile Executors
+✅ Desktop Executors
+✅ Auto-detection enabled
+]], identifyexecutor and identifyexecutor() or "Unknown")
+})
+
+infoSec:Paragraph({
+    Title = "Features",
+    Content = [[
+- Discord Webhook Notifications
+- Blatant Instant Fishing
+- FPS & Ping Overlay
+- Anti-AFK Protection
+- Auto Reconnect
+- Server Hopping
+- Performance Monitoring
+- Mobile Compatibility
+]]
+})
+
+infoSec:Button({
+    Title = "Copy Discord Support",
+    Description = "Get help and updates",
+    Icon = "message-circle",
+    Callback = function()
+        setclipboard("https://discord.gg/raditya") -- Replace with actual invite
+        WindUI:Notify({
+            Title = "Copied!", 
+            Content = "Discord invite copied to clipboard",
+            Duration = 3,
+            Icon = "check"
+        })
+    end
+})
+
+-- ==================== FINAL NOTIFICATIONS ====================
+print("=" .. string.rep("=", 50))
+print("✅ Raditya Webhook + Fishing v2.0 Loaded!")
+print("📊 Performance Monitor Active")
+print("🎣 Fishing System Ready")
+print("📨 Webhook System Ready")
+print("=" .. string.rep("=", 50))
+
 WindUI:Notify({
-    Title = "Raditya Script Loaded",
-    Content = "Fixed Version with Performance Monitor!",
-    Duration = 5
+    Title = "Script Loaded Successfully!",
+    Content = "Raditya Webhook v2.0 - All systems operational",
+    Duration = 5,
+    Icon = "check-circle"
 })
