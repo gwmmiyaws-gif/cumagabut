@@ -1,9 +1,9 @@
 -- ==================== FISH IT WEBHOOK BY RADITYA ====================
 -- Delta Executor (Android) Compatible Version - v3.1 AUTO SAVE CONFIG
--- Enhanced Webhook + Disconnect Monitor + Chloe X Blatant Fishing
+-- Enhanced Webhook + Disconnect Monitor + Improved RockHub Blatant
 
 print("=" .. string.rep("=", 50))
-print("🎣 Webhook By Raditya Loaded! (v3.1 + Auto Save Config)")
+print("🎣 Webhook By Raditya Loaded! (v3.1 + Auto Save + Improved RockHub)")
 print("=" .. string.rep("=", 50))
 
 -- Load WindUI
@@ -156,18 +156,23 @@ local SelectedRarityCategories = {}
 local SelectedWebhookItemNames = {}
 local ImageURLCache = {}
 
--- Chloe X Blatant Fishing Configuration
+-- Improved RockHub Blatant Fishing Configuration
 local blatantInstantState = false
 local blatantLoopThread = nil
 local blatantEquipThread = nil
-_G.Instant = false
-local CancelWaitTime = 3
-local ResetTimer = 0.5
-local hasTriggeredBug = false
-local lastFishTime = 0
-local fishConnected = false
-local lastCancelTime = 0
-local hasFishingEffect = false
+local blatantStabilityThread = nil
+local isFishingInProgress = false
+local completeDelay = 0.08
+local cancelDelay = 0.04
+local loopInterval = 0.25
+local equipInterval = 0.5
+_G.RockHub_BlatantActive = false
+
+-- Stability improvements
+local lastSuccessfulCast = 0
+local consecutiveFailures = 0
+local maxConsecutiveFailures = 3
+local recoveryDelay = 1
 
 -- Disconnect Detection
 local hasSentDisconnect = false
@@ -177,6 +182,8 @@ local disconnectMonitorActive = false
 local totalFishCaught = 0
 local successfulWebhooks = 0
 local failedWebhooks = 0
+local totalCasts = 0
+local successfulCasts = 0
 
 -- Performance Statistics
 local performanceStats = {
@@ -196,7 +203,12 @@ local function SaveConfig()
         isDisconnectWebhookEnabled = isDisconnectWebhookEnabled,
         selectedRarities = SelectedRarityCategories,
         selectedFishNames = SelectedWebhookItemNames,
-        blatantDelay = CancelWaitTime,
+        blatantSettings = {
+            completeDelay = completeDelay,
+            cancelDelay = cancelDelay,
+            loopInterval = loopInterval,
+            equipInterval = equipInterval
+        },
         version = "3.1"
     }
     
@@ -233,7 +245,14 @@ local function LoadConfig()
         isDisconnectWebhookEnabled = result.isDisconnectWebhookEnabled or false
         SelectedRarityCategories = result.selectedRarities or {}
         SelectedWebhookItemNames = result.selectedFishNames or {}
-        CancelWaitTime = result.blatantDelay or 3
+        
+        -- Load blatant settings
+        if result.blatantSettings then
+            completeDelay = result.blatantSettings.completeDelay or 0.08
+            cancelDelay = result.blatantSettings.cancelDelay or 0.04
+            loopInterval = result.blatantSettings.loopInterval or 0.25
+            equipInterval = result.blatantSettings.equipInterval or 0.5
+        end
         
         print("✅ Config loaded successfully")
         print("📨 Fish Webhook:", WEBHOOK_URL ~= "" and "Set" or "Empty")
@@ -604,6 +623,8 @@ local function onFishObtained(itemId, metadata, fullData)
         local isUserFilterMatch = shouldNotify(fishRarityUpper, metadata, fishName)
 
         if isWebhookEnabled and WEBHOOK_URL ~= "" and isUserFilterMatch then
+            local successRate = totalCasts > 0 and math.floor((successfulCasts / totalCasts) * 100) or 0
+            
             local embed = {
                 title = string.format("🎣 New Fish Caught! (%s)", fishName),
                 description = string.format("Caught by **%s**", LocalPlayer.DisplayName or LocalPlayer.Name),
@@ -615,8 +636,8 @@ local function onFishObtained(itemId, metadata, fullData)
                     {name = "✨ Mutation", value = string.format("`%s`", mutationDisplay), inline = true},
                     {name = "💰 Sell Price", value = string.format("`%s`", formattedSellPrice), inline = true},
                     {name = "💵 Coins", value = string.format("`%s`", formattedCoins), inline = true},
-                    {name = "📊 Performance", value = string.format("`FPS: %d | Ping: %dms`", 
-                        performanceStats.fps, performanceStats.ping), inline = false}
+                    {name = "📊 Performance", value = string.format("`FPS: %d | Ping: %dms | Success: %d%%`", 
+                        performanceStats.fps, performanceStats.ping, successRate), inline = false}
                 },
                 thumbnail = {url = imageUrl},
                 footer = {
@@ -656,7 +677,7 @@ if Remotes.ObtainedNewFishNotification then
     end)
 end
 
--- ==================== CHLOE X BLATANT FISHING SYSTEM ====================
+-- ==================== IMPROVED ROCKHUB BLATANT FISHING SYSTEM ====================
 -- Logic Killer
 task.spawn(function()
     local success, FishingController = pcall(function() 
@@ -668,18 +689,18 @@ task.spawn(function()
         local Old_Cast = FishingController.SendFishingRequestToServer
         
         FishingController.RequestChargeFishingRod = function(...)
-            if _G.Instant then return end
+            if _G.RockHub_BlatantActive then return end
             return Old_Charge(...)
         end
         
         FishingController.SendFishingRequestToServer = function(...)
-            if _G.Instant then 
-                return false, "Blocked by Chloe X Blatant" 
+            if _G.RockHub_BlatantActive then 
+                return false, "Blocked by RockHub Blatant" 
             end
             return Old_Cast(...)
         end
         
-        print("✅ Fishing Controller hooked (Chloe X)")
+        print("✅ Fishing Controller hooked (RockHub)")
     end
 end)
 
@@ -687,7 +708,7 @@ end)
 task.spawn(function()
     local mt = safeGetMetatable()
     if not mt then 
-        warn("[Chloe X] Metatable hook disabled")
+        warn("[RockHub] Metatable hook disabled")
         return 
     end
     
@@ -697,7 +718,7 @@ task.spawn(function()
     mt.__namecall = safeNewCClosure(function(self, ...)
         local method = safeGetNamecallMethod()
         
-        if _G.Instant and not safeCheckCaller() then
+        if _G.RockHub_BlatantActive and not safeCheckCaller() then
             local remoteName = self.Name
             
             if method == "InvokeServer" then
@@ -715,7 +736,7 @@ task.spawn(function()
     end)
     
     safeSetReadonly(mt, true)
-    print("✅ Namecall hook installed (Chloe X)")
+    print("✅ Namecall hook installed (RockHub)")
 end)
 
 -- Visual Suppressor
@@ -753,7 +774,7 @@ local function SuppressGameVisuals(active)
                 ColorSequenceKeypoint.new(1, Color3.fromHex("ff2256"))
             })
 
-            while _G.Instant do
+            while _G.RockHub_BlatantActive do
                 local targets = CollectionService:GetTagged("AutoFishingButton")
                 
                 if #targets == 0 then
@@ -777,134 +798,93 @@ local function SuppressGameVisuals(active)
     end
 end
 
--- Hook FishCaught for Chloe X
-if not fishConnected then
-    local success, FishingController = pcall(function() 
-        return require(ReplicatedStorage.Controllers.FishingController) 
-    end)
+-- IMPROVED: Instant fishing with error recovery
+local function runBlatantInstant()
+    if not blatantInstantState or isFishingInProgress then return end
     
-    if success and FishingController then
-        local OriginalFishCaught = FishingController.FishCaught
-        
-        function FishingController.FishCaught(...)
-            if _G.Instant then
-                lastFishTime = tick()
+    isFishingInProgress = true
+    totalCasts = totalCasts + 1
+    
+    task.spawn(function()
+        local castStartTime = tick()
+        local success = pcall(function()
+            local timestamp = os.time() + os.clock()
+            
+            -- Step 1: Charge
+            if Remotes.ChargeFishingRod then
+                Remotes.ChargeFishingRod:InvokeServer(timestamp)
             end
-            return OriginalFishCaught(...)
-        end
-        
-        fishConnected = true
-    end
-end
-
--- Initial Bug Trigger (Chloe X Method)
-task.spawn(function()
-    repeat
-        task.wait(0.1)
-    until _G.Instant
-    
-    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-    task.wait(0.1)
-    
-    if char:FindFirstChild("!!!FISHING_VIEW_MODEL!!!") then
-        pcall(function()
-            Remotes.EquipToolFromHotbar:FireServer(1)
-        end)
-    end
-    
-    task.wait(0.1)
-    
-    local cosmeticFolder = workspace:FindFirstChild("CosmeticFolder")
-    
-    if not hasTriggeredBug then
-        if cosmeticFolder and not cosmeticFolder:FindFirstChild(tostring(LocalPlayer.UserId)) then
-            pcall(function()
-                Remotes.ChargeFishingRod:InvokeServer(2)
-                Remotes.RequestFishingMinigameStarted:InvokeServer(-1.25, 1)
-            end)
-        end
-    end
-    
-    if cosmeticFolder and not cosmeticFolder:FindFirstChild(tostring(LocalPlayer.UserId)) then
-        pcall(function()
-            Remotes.ChargeFishingRod:InvokeServer(2)
-            Remotes.RequestFishingMinigameStarted:InvokeServer(-1.25, 1)
-        end)
-        
-        local startTime = tick()
-        local initialFishTime = lastFishTime
-        
-        while _G.Instant and lastFishTime == initialFishTime do
-            task.wait(0.1)
-        end
-        
-        if startTime < lastFishTime then
-            pcall(function()
-                Remotes.ChargeFishingRod:InvokeServer(2)
-                Remotes.RequestFishingMinigameStarted:InvokeServer(-1.25, 1)
+            
+            task.wait(0.01)
+            
+            -- Step 2: Start minigame
+            if Remotes.RequestFishingMinigameStarted then
+                Remotes.RequestFishingMinigameStarted:InvokeServer(-139.6379699707, 0.99647927980797)
+            end
+            
+            task.wait(completeDelay)
+            
+            -- Step 3: Complete
+            if Remotes.FishingCompleted then
+                Remotes.FishingCompleted:FireServer()
+            end
+            
+            task.wait(cancelDelay)
+            
+            -- Step 4: Cancel
+            if Remotes.CancelFishingInputs then
                 Remotes.CancelFishingInputs:InvokeServer()
-                Remotes.ChargeFishingRod:InvokeServer(2)
-                Remotes.RequestFishingMinigameStarted:InvokeServer(-1.25, 1)
-            end)
-            hasTriggeredBug = true
-        end
-    end
-end)
-
--- Completion Spam (Chloe X Method)
-task.spawn(function()
-    while task.wait(0.1) do
-        if _G.Instant then
-            repeat
-                task.wait(0.2)
+            end
+        end)
+        
+        if success then
+            lastSuccessfulCast = tick()
+            consecutiveFailures = 0
+            successfulCasts = successfulCasts + 1
+        else
+            consecutiveFailures = consecutiveFailures + 1
+            warn("[Fishing Error] Cycle failed, consecutive failures:", consecutiveFailures)
+            
+            -- Recovery mechanism
+            if consecutiveFailures >= maxConsecutiveFailures then
+                warn("[Recovery] Too many failures, attempting recovery...")
+                task.wait(recoveryDelay)
+                
+                -- Try to reset state
                 pcall(function()
-                    Remotes.FishingCompleted:FireServer()
+                    if Remotes.CancelFishingInputs then
+                        Remotes.CancelFishingInputs:InvokeServer()
+                    end
                 end)
-            until not _G.Instant
+                
+                task.wait(0.5)
+                
+                -- Re-equip rod
+                pcall(function()
+                    if Remotes.EquipToolFromHotbar then
+                        Remotes.EquipToolFromHotbar:FireServer(1)
+                    end
+                end)
+                
+                consecutiveFailures = 0
+                print("[Recovery] State reset complete")
+            end
         end
-    end
-end)
-
--- Play Effect Detection
-local REPlayEffect = GetRemote(RPath, "RE/PlayFishingEffect")
-if REPlayEffect and typeof(REPlayEffect) == "Instance" and REPlayEffect:IsA("RemoteEvent") then
-    REPlayEffect.OnClientEvent:Connect(function(player, _, effectType)
-        if player == LocalPlayer and effectType == 2 then
-            hasFishingEffect = true
-        end
+        
+        isFishingInProgress = false
     end)
 end
-
--- Cancel on Timeout (Chloe X Method)
-task.spawn(function()
-    while true do
-        repeat
-            task.wait(CancelWaitTime)
-        until _G.Instant
-        
-        local currentTime = tick()
-        
-        if not hasFishingEffect and currentTime - lastFishTime > CancelWaitTime - ResetTimer then
-            pcall(function()
-                Remotes.CancelFishingInputs:InvokeServer()
-            end)
-            lastCancelTime = currentTime
-        end
-        
-        hasFishingEffect = false
-    end
-end)
 
 -- ==================== CREATE WINDUI ====================
 -- Load saved config first
 LoadConfig()
 
 local Window = WindUI:CreateWindow({
-    Title = "Raditya Webhook v3.1 (Auto Save)",
+    Title = "Raditya Webhook v3.1 (Improved RockHub)",
     Icon = "rbxassetid://116236936447443",
-    Author = "Raditya (Chloe X Blatant)",
+    Author = "Raditya (Auto Save)",
     Folder = "RadityaWebhookV31",
-    Size = UDim2.fromOffset(640, 480),
+    Size = UDim2.fromOffset(640, 500),
     MinSize = Vector2.new(560, 250),
     MaxSize = Vector2.new(950, 760),
     Transparent = true,
@@ -1005,14 +985,14 @@ webhooksec:Button({
         
         local testEmbed = {
             title = "🎣 Raditya Fish Webhook Test (v3.1)",
-            description = "Test successful! Config auto-saved!",
+            description = "Test successful! Improved RockHub Blatant!",
             color = 0x00FF00,
             fields = {
                 {name = "Executor", value = identifyexecutor and identifyexecutor() or "Unknown", inline = true},
                 {name = "User", value = LocalPlayer.Name, inline = true},
                 {name = "FPS", value = tostring(performanceStats.fps), inline = true}
             },
-            footer = {text = "Raditya Webhook v3.1 - Chloe X Blatant"},
+            footer = {text = "Raditya Webhook v3.1 - Improved RockHub"},
             timestamp = os.date("!%Y-%m-%dT%H:%M:%S")
         }
         
@@ -1121,6 +1101,7 @@ local StatsSection = WebhookTab:Section({Title = "Statistics"})
 local fishLabel = StatsSection:Paragraph({Title = "Fish Caught: 0", Content = ""})
 local webhookLabel = StatsSection:Paragraph({Title = "Webhooks Sent: 0", Content = ""})
 local failedLabel = StatsSection:Paragraph({Title = "Failed: 0", Content = ""})
+local successRateLabel = StatsSection:Paragraph({Title = "Success Rate: 0%", Content = ""})
 
 task.spawn(function()
     while task.wait(1) do
@@ -1128,6 +1109,9 @@ task.spawn(function()
             fishLabel:SetTitle("Fish Caught: " .. FormatNumber(totalFishCaught))
             webhookLabel:SetTitle("Webhooks Sent: " .. FormatNumber(successfulWebhooks))
             failedLabel:SetTitle("Failed: " .. FormatNumber(failedWebhooks))
+            
+            local successRate = totalCasts > 0 and math.floor((successfulCasts / totalCasts) * 100) or 0
+            successRateLabel:SetTitle(string.format("Blatant Success Rate: %d%% (%d/%d)", successRate, successfulCasts, totalCasts))
         end)
     end
 end)
@@ -1139,60 +1123,181 @@ local FishingTab = Window:Tab({
 })
 
 local blatant = FishingTab:Section({
-    Title = "Chloe X Blatant Fishing",
-    Description = "Advanced instant fishing system"
+    Title = "Improved RockHub Blatant Fishing",
+    Description = "Enhanced stability with auto-recovery"
 })
 
 blatant:Input({
-    Title = "Cancel Wait Time (seconds)",
-    Description = "Delay before auto-cancel",
-    Value = tostring(CancelWaitTime),
-    Placeholder = "3",
+    Title = "Loop Interval (seconds)",
+    Description = "Time between fishing cycles",
+    Value = tostring(loopInterval),
+    Placeholder = "0.25",
     Callback = function(input)
         local val = tonumber(input)
-        if val and val >= 1 and val <= 10 then 
-            CancelWaitTime = val 
+        if val and val >= 0.1 and val <= 5 then 
+            loopInterval = val 
             SaveConfig()
-            print("Cancel Wait Time set to:", val)
+            print("Loop interval:", val)
+        end
+    end
+})
+
+blatant:Input({
+    Title = "Complete Delay (seconds)",
+    Description = "Delay before completing",
+    Value = tostring(completeDelay),
+    Placeholder = "0.08",
+    Callback = function(input)
+        local val = tonumber(input)
+        if val and val >= 0.05 and val <= 1 then 
+            completeDelay = val 
+            SaveConfig()
+            print("Complete delay:", val)
+        end
+    end
+})
+
+blatant:Input({
+    Title = "Cancel Delay (seconds)",
+    Description = "Delay before canceling",
+    Value = tostring(cancelDelay),
+    Placeholder = "0.04",
+    Callback = function(input)
+        local val = tonumber(input)
+        if val and val >= 0.01 and val <= 1 then 
+            cancelDelay = val 
+            SaveConfig()
+            print("Cancel delay:", val)
+        end
+    end
+})
+
+blatant:Input({
+    Title = "Equip Interval (seconds)",
+    Description = "Rod re-equip interval",
+    Value = tostring(equipInterval),
+    Placeholder = "0.5",
+    Callback = function(input)
+        local val = tonumber(input)
+        if val and val >= 0.3 and val <= 2 then 
+            equipInterval = val 
+            SaveConfig()
+            print("Equip interval:", val)
         end
     end
 })
 
 blatant:Toggle({
-    Title = "Enable Chloe X Blatant Fishing",
-    Description = "Instant fishing with advanced hooks",
+    Title = "Enable RockHub Blatant Fishing",
+    Description = "Instant fishing with auto-recovery",
     Value = false,
     Callback = function(state)
-        _G.Instant = state
+        blatantInstantState = state
+        _G.RockHub_BlatantActive = state
         
         SuppressGameVisuals(state)
         
         if state then
-            -- Auto-equip rod
-            task.spawn(function()
-                while _G.Instant do
+            -- Reset statistics
+            consecutiveFailures = 0
+            lastSuccessfulCast = tick()
+            
+            -- Enable auto fishing
+            if Remotes.UpdateAutoFishingState then
+                pcall(function() 
+                    Remotes.UpdateAutoFishingState:InvokeServer(true) 
+                end)
+                task.wait(0.5)
+                pcall(function() 
+                    Remotes.UpdateAutoFishingState:InvokeServer(true) 
+                end)
+            end
+
+            -- Start fishing loop
+            blatantLoopThread = task.spawn(function()
+                while blatantInstantState do
+                    runBlatantInstant()
+                    task.wait(loopInterval)
+                end
+            end)
+
+            -- Keep rod equipped
+            if blatantEquipThread then task.cancel(blatantEquipThread) end
+            blatantEquipThread = task.spawn(function()
+                while blatantInstantState do
                     if Remotes.EquipToolFromHotbar then
                         pcall(function() 
                             Remotes.EquipToolFromHotbar:FireServer(1) 
                         end)
                     end
-                    task.wait(0.5)
+                    task.wait(equipInterval)
+                end
+            end)
+            
+            -- Stability monitor
+            if blatantStabilityThread then task.cancel(blatantStabilityThread) end
+            blatantStabilityThread = task.spawn(function()
+                while blatantInstantState do
+                    task.wait(5)
+                    
+                    -- Check if no successful casts in last 10 seconds
+                    if tick() - lastSuccessfulCast > 10 then
+                        warn("[Stability] No successful casts detected, forcing recovery...")
+                        
+                        -- Force recovery
+                        pcall(function()
+                            if Remotes.CancelFishingInputs then
+                                Remotes.CancelFishingInputs:InvokeServer()
+                            end
+                        end)
+                        
+                        task.wait(1)
+                        
+                        pcall(function()
+                            if Remotes.EquipToolFromHotbar then
+                                Remotes.EquipToolFromHotbar:FireServer(1)
+                            end
+                        end)
+                        
+                        lastSuccessfulCast = tick()
+                        consecutiveFailures = 0
+                        print("[Stability] Recovery complete")
+                    end
                 end
             end)
             
             WindUI:Notify({
-                Title = "Chloe X Blatant ON", 
-                Content = "Advanced fishing activated!",
+                Title = "RockHub Blatant ON", 
+                Content = "Improved stability activated!",
                 Duration = 3, 
                 Icon = "zap"
             })
         else
-            pcall(function()
-                Remotes.CancelFishingInputs:InvokeServer()
-            end)
+            -- Disable auto fishing
+            if Remotes.UpdateAutoFishingState then
+                pcall(function() 
+                    Remotes.UpdateAutoFishingState:InvokeServer(false) 
+                end)
+            end
+            
+            -- Stop threads
+            if blatantLoopThread then 
+                task.cancel(blatantLoopThread) 
+                blatantLoopThread = nil 
+            end
+            if blatantEquipThread then 
+                task.cancel(blatantEquipThread) 
+                blatantEquipThread = nil 
+            end
+            if blatantStabilityThread then 
+                task.cancel(blatantStabilityThread) 
+                blatantStabilityThread = nil 
+            end
+            
+            isFishingInProgress = false
             
             WindUI:Notify({
-                Title = "Chloe X Blatant OFF", 
+                Title = "RockHub Blatant OFF", 
                 Duration = 2,
                 Icon = "x"
             })
@@ -1201,16 +1306,17 @@ blatant:Toggle({
 })
 
 blatant:Paragraph({
-    Title = "ℹ️ How It Works",
+    Title = "🔧 Improvements",
     Content = [[
-Chloe X Blatant uses advanced hooks:
-✅ Controller method hijacking
-✅ Namecall interception  
-✅ Visual suppression
-✅ Auto bug triggering
-✅ Smart timeout canceling
+✅ Auto error recovery
+✅ Consecutive failure detection
+✅ Automatic state reset
+✅ Stability monitoring
+✅ Success rate tracking
+✅ Smart rod re-equipping
 
-More stable than basic instant fishing!
+If 3 failures occur, auto-recovery triggers.
+If no catches in 10s, force recovery.
 ]]
 })
 
@@ -1231,7 +1337,7 @@ Your settings are automatically saved:
 ✅ Webhook URLs
 ✅ Discord User ID  
 ✅ Filter settings (rarity & names)
-✅ Blatant fishing delays
+✅ Blatant fishing settings
 ✅ Toggle states
 
 Config loads on script execution!
@@ -1328,7 +1434,10 @@ Fish Webhook: %s
 Disconnect Monitor: %s
 Selected Rarities: %d
 Selected Fish: %d
-Blatant Delay: %.1fs
+Loop Interval: %.2fs
+Complete Delay: %.2fs
+Cancel Delay: %.2fs
+Equip Interval: %.2fs
 ]],
                 WEBHOOK_URL ~= "" and "✅ Set" or "❌ Empty",
                 DISCONNECT_WEBHOOK_URL ~= "" and "✅ Set" or "❌ Empty",
@@ -1337,7 +1446,10 @@ Blatant Delay: %.1fs
                 isDisconnectWebhookEnabled and "🟢 ON" or "🔴 OFF",
                 #SelectedRarityCategories,
                 #SelectedWebhookItemNames,
-                CancelWaitTime
+                loopInterval,
+                completeDelay,
+                cancelDelay,
+                equipInterval
             )
             
             configDisplay:SetContent(info)
@@ -1358,34 +1470,38 @@ local infoSec = InfoTab:Section({
 infoSec:Paragraph({
     Title = "📦 Version & Features",
     Content = [[
-Version: v3.1 - Auto Save Config
+Version: v3.1 - Improved RockHub
 
 ✨ New in v3.1:
 - Auto save/load configuration
-- Chloe X blatant fishing
-- Config management tab
-- Improved stability
+- Improved RockHub stability
+- Auto error recovery
+- Success rate tracking
+- Stability monitoring
 
 Features:
 ✅ Discord Fish Webhook
 ✅ Disconnect Alerts
 ✅ Auto Config Save
-✅ Chloe X Blatant
+✅ Improved RockHub
 ✅ Mobile Support
 ]]
 })
 
 infoSec:Paragraph({
-    Title = "🎣 Blatant Fishing Info",
+    Title = "🎣 RockHub Improvements",
     Content = [[
-Now using Chloe X method:
-✅ More stable than basic instant
-✅ Controller hijacking
-✅ Visual suppression
-✅ Auto bug triggering
-✅ Smart timeout handling
+Stability Enhancements:
+✅ Auto-recovery on failures
+✅ Consecutive error detection
+✅ 10-second timeout monitor
+✅ Smart state reset
+✅ Success rate tracking
+✅ Optimized timing
 
-Recommended delay: 2-3 seconds
+Recovery triggers after:
+- 3 consecutive failures
+- 10 seconds no catch
 ]]
 })
 
@@ -1403,17 +1519,25 @@ local pingLabel = perfSec:Paragraph({
     Content = "Network latency"
 })
 
+local memLabel = perfSec:Paragraph({
+    Title = "Memory: --",
+    Content = "Instance memory usage"
+})
+
 task.spawn(function()
     while task.wait(0.5) do
         pcall(function()
             local fps = performanceStats.fps
             local ping = performanceStats.ping
+            local mem = performanceStats.memory
             
             local fpsStatus = fps >= 60 and "🟢" or (fps >= 30 and "🟡" or "🔴")
             local pingStatus = ping < 100 and "🟢" or (ping < 200 and "🟡" or "🔴")
+            local memStatus = mem < 500 and "🟢" or (mem < 1000 and "🟡" or "🔴")
             
             fpsLabel:SetTitle(string.format("%s FPS: %d", fpsStatus, fps))
             pingLabel:SetTitle(string.format("%s Ping: %d ms", pingStatus, ping))
+            memLabel:SetTitle(string.format("%s Memory: %d MB", memStatus, mem))
         end)
     end
 end)
@@ -1430,12 +1554,13 @@ print("✅ Raditya Webhook v3.1 Loaded!")
 print("💾 Config System: Auto Save/Load")
 print("📨 Fish Webhook System Ready")
 print("🔔 Disconnect Monitor Ready")
-print("🎣 Chloe X Blatant Fishing Ready")
+print("🎣 Improved RockHub Blatant Ready")
+print("🔧 Stability Features: Active")
 print("=" .. string.rep("=", 50))
 
 WindUI:Notify({
     Title = "Script Loaded!",
-    Content = "Raditya v3.1 - Auto Save Config + Chloe X!",
+    Content = "Raditya v3.1 - Improved RockHub!",
     Duration = 5,
     Icon = "check-circle"
 })
