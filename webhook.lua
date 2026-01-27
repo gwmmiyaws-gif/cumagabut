@@ -1,9 +1,9 @@
 -- ==================== FISH IT WEBHOOK BY RADITYA ====================
--- Delta Executor (Android) Compatible Version - UPDATED v2.0
--- Enhanced Performance + Stability Improvements
+-- Delta Executor (Android) Compatible Version - v3.0 DISCONNECT DETECTION
+-- Enhanced Webhook + Disconnect Monitor
 
 print("=" .. string.rep("=", 50))
-print("🎣 Webhook By Raditya Loaded! (v2.0 Updated)")
+print("🎣 Webhook By Raditya Loaded! (v3.0 + Disconnect Detection)")
 print("=" .. string.rep("=", 50))
 
 -- Load WindUI
@@ -16,6 +16,7 @@ local LocalPlayer = Players.LocalPlayer
 local RunService = game:GetService("RunService")
 local Stats = game:GetService("Stats")
 local TeleportService = game:GetService("TeleportService")
+local GuiService = game:GetService("GuiService")
 
 -- ==================== MOBILE COMPATIBILITY LAYER ====================
 local function isMobileExecutor()
@@ -49,54 +50,6 @@ local function mobileRequest(options)
             Error = tostring(response)
         }
     end
-end
-
-local function safeGetMetatable()
-    local funcs = {getrawmetatable, getmetatable}
-    for _, func in ipairs(funcs) do
-        if func then
-            local success, mt = pcall(function()
-                return func(game)
-            end)
-            if success and mt then return mt end
-        end
-    end
-    return nil
-end
-
-local function safeSetReadonly(tbl, state)
-    if not tbl then return false end
-    local funcs = {setreadonly, make_writeable, makewriteable, make_readonly}
-    for _, func in ipairs(funcs) do
-        if func then
-            local success = pcall(function() func(tbl, state) end)
-            if success then return true end
-        end
-    end
-    return false
-end
-
-local function safeNewCClosure(func)
-    local closureFuncs = {newcclosure, newlclosure}
-    for _, closureFunc in ipairs(closureFuncs) do
-        if closureFunc then
-            local success, result = pcall(closureFunc, func)
-            if success then return result end
-        end
-    end
-    return func
-end
-
-local function safeCheckCaller()
-    if checkcaller then return checkcaller() end
-    if is_protosmasher_caller then return is_protosmasher_caller() end
-    if get_calling_script then return get_calling_script() == nil end
-    return true
-end
-
-local function safeGetNamecallMethod()
-    if getnamecallmethod then return getnamecallmethod() end
-    return ""
 end
 
 -- ==================== LOAD CRITICAL MODULES ====================
@@ -143,21 +96,28 @@ local Remotes = {
 -- ==================== VARIABLES ====================
 -- Webhook Configuration
 local WEBHOOK_URL = ""
-local WEBHOOK_USERNAME = "Raditya Fish Notify v2.0"
+local DISCONNECT_WEBHOOK_URL = ""
+local DISCORD_USER_ID = ""
+local WEBHOOK_USERNAME = "Raditya Fish Notify v3.0"
 local isWebhookEnabled = false
+local isDisconnectWebhookEnabled = false
 local SelectedRarityCategories = {}
 local SelectedWebhookItemNames = {}
 local ImageURLCache = {}
 
--- Blatant Fishing Configuration
+-- Blatant Fishing Configuration (FROM REFERENCE SCRIPT)
 local blatantInstantState = false
 local blatantLoopThread = nil
 local blatantEquipThread = nil
 local isFishingInProgress = false
-local completeDelay = 0.08
-local cancelDelay = 0.04
-local loopInterval = 0.25
+local completeDelay = 0.1
+local cancelDelay = 0.05
+local loopInterval = 0.3
 _G.RockHub_BlatantActive = false
+
+-- Disconnect Detection
+local hasSentDisconnect = false
+local disconnectMonitorActive = false
 
 -- Statistics
 local totalFishCaught = 0
@@ -177,10 +137,8 @@ task.spawn(function()
     while task.wait(0.5) do
         local now = os.clock()
         if now - performanceStats.lastUpdate >= 0.5 then
-            -- Real FPS
             performanceStats.fps = math.floor(workspace:GetRealPhysicsFPS())
             
-            -- Real Ping
             local success = pcall(function()
                 local networkStats = Stats.Network.ServerStatsItem
                 local pingValue = networkStats["Data Ping"]
@@ -193,7 +151,6 @@ task.spawn(function()
                 performanceStats.ping = 0
             end
             
-            -- Memory usage
             local memStats = Stats:GetMemoryUsageMbForTag(Enum.DeveloperMemoryTag.Instances)
             performanceStats.memory = math.floor(memStats)
             
@@ -357,6 +314,129 @@ local function shouldNotify(fishRarityUpper, fishMetadata, fishName)
     return false
 end
 
+-- ==================== DISCONNECT WEBHOOK SYSTEM ====================
+local function SendDisconnectWebhook(reason)
+    if not isDisconnectWebhookEnabled or hasSentDisconnect then
+        return
+    end
+    
+    hasSentDisconnect = true
+    
+    local webhookUrl = DISCONNECT_WEBHOOK_URL
+    if not webhookUrl or webhookUrl == "" then
+        warn("[Disconnect] No webhook URL set")
+        return
+    end
+    
+    local playerName = LocalPlayer.Name
+    local displayName = LocalPlayer.DisplayName
+    local userId = tostring(LocalPlayer.UserId)
+    
+    -- Format timestamp
+    local timeData = os.date("*t")
+    local timestamp = string.format(
+        "%02d/%02d/%04d %02d:%02d %s",
+        timeData.day,
+        timeData.month,
+        timeData.year,
+        timeData.hour > 12 and timeData.hour - 12 or timeData.hour,
+        timeData.min,
+        timeData.hour >= 12 and "PM" or "AM"
+    )
+    
+    -- Prepare mention
+    local mentionText = ""
+    if DISCORD_USER_ID and DISCORD_USER_ID ~= "" then
+        mentionText = string.format("🔔 <@%s> Your account got disconnected!", DISCORD_USER_ID:gsub("%D", ""))
+    else
+        mentionText = "🔔 Account Disconnected Alert!"
+    end
+    
+    -- Clean reason
+    local cleanReason = (reason and reason ~= "") and reason or "Unknown Reason / Kicked"
+    
+    -- Get current stats
+    local currentCoins = 0
+    local caughtCount = 0
+    
+    pcall(function()
+        local replion = GetPlayerDataReplion()
+        if replion then
+            currentCoins = replion:Get("Coins") or replion:Get({"Coins"}) or 0
+        end
+        
+        local leaderstats = LocalPlayer:FindFirstChild("leaderstats")
+        if leaderstats then
+            local caughtStat = leaderstats:FindFirstChild("Caught")
+            if caughtStat then
+                caughtCount = caughtStat.Value
+            end
+        end
+    end)
+    
+    local embed = {
+        title = "⚠️ PLAYER DISCONNECTED",
+        description = mentionText,
+        color = 0xFF0000, -- Red
+        fields = {
+            {name = "👤 Player Name", value = string.format("`%s (@%s)`", playerName, displayName), inline = true},
+            {name = "🆔 User ID", value = string.format("`%s`", userId), inline = true},
+            {name = "⏰ Time", value = string.format("`%s`", timestamp), inline = false},
+            {name = "❌ Disconnect Reason", value = string.format("```%s```", cleanReason), inline = false},
+            {name = "💰 Last Coins", value = string.format("`%s`", FormatNumber(currentCoins)), inline = true},
+            {name = "🐟 Fish Caught", value = string.format("`%s`", FormatNumber(caughtCount)), inline = true},
+        },
+        thumbnail = {
+            url = "https://media.tenor.com/rx88bhLtmyUAAAAi/gawr-gura.gif"
+        },
+        footer = {
+            text = "Raditya Disconnect Monitor v3.0",
+            icon_url = "https://i.imgur.com/WltO8IG.png"
+        },
+        timestamp = os.date("!%Y-%m-%dT%H:%M:%S")
+    }
+    
+    task.spawn(function()
+        local success, message = sendExploitWebhook(webhookUrl, "Raditya Disconnect Alert", embed)
+        if success then
+            print("✅ Disconnect webhook sent successfully")
+        else
+            warn("❌ Failed to send disconnect webhook:", message)
+        end
+    end)
+end
+
+-- Monitor for disconnects
+local function StartDisconnectMonitor()
+    if disconnectMonitorActive then return end
+    disconnectMonitorActive = true
+    
+    -- Monitor ErrorMessageChanged
+    GuiService.ErrorMessageChanged:Connect(function(errorMessage)
+        if errorMessage and errorMessage ~= "" and not hasSentDisconnect then
+            print("[Disconnect Detected] Reason:", errorMessage)
+            SendDisconnectWebhook(errorMessage)
+        end
+    end)
+    
+    -- Monitor OnTeleport (prevents double webhook on teleport)
+    LocalPlayer.OnTeleport:Connect(function(teleportState)
+        if teleportState == Enum.TeleportState.Started then
+            hasSentDisconnect = true
+            print("[Teleport Detected] Blocking disconnect webhook")
+        end
+    end)
+    
+    -- Monitor Player Removing (kick detection)
+    Players.PlayerRemoving:Connect(function(player)
+        if player == LocalPlayer and not hasSentDisconnect then
+            SendDisconnectWebhook("Player was removed from server")
+        end
+    end)
+    
+    print("✅ Disconnect monitor started")
+end
+
 local function onFishObtained(itemId, metadata, fullData)
     local success, results = pcall(function()
         local dummyItem = {Id = itemId, Metadata = metadata}
@@ -426,7 +506,7 @@ local function onFishObtained(itemId, metadata, fullData)
                 },
                 thumbnail = {url = imageUrl},
                 footer = {
-                    text = string.format("Raditya Webhook v2.0 • Total: %s • %s", 
+                    text = string.format("Raditya Webhook v3.0 • Total: %s • %s", 
                         caughtDisplay, os.date("%Y-%m-%d %H:%M:%S"))
                 },
                 timestamp = os.date("!%Y-%m-%dT%H:%M:%S")
@@ -462,128 +542,8 @@ if Remotes.ObtainedNewFishNotification then
     end)
 end
 
--- ==================== BLATANT FISHING SYSTEM ====================
--- Logic Killer
-task.spawn(function()
-    local success, FishingController = pcall(function() 
-        return require(ReplicatedStorage.Controllers.FishingController) 
-    end)
-    
-    if success and FishingController then
-        local Old_Charge = FishingController.RequestChargeFishingRod
-        local Old_Cast = FishingController.SendFishingRequestToServer
-        
-        FishingController.RequestChargeFishingRod = function(...)
-            if _G.RockHub_BlatantActive then return end
-            return Old_Charge(...)
-        end
-        
-        FishingController.SendFishingRequestToServer = function(...)
-            if _G.RockHub_BlatantActive then 
-                return false, "Blocked by Raditya v2.0" 
-            end
-            return Old_Cast(...)
-        end
-        
-        print("✅ Fishing Controller hooked successfully")
-    end
-end)
-
--- Remote Killer
-task.spawn(function()
-    local mt = safeGetMetatable()
-    if not mt then 
-        warn("[Delta Compat] Metatable hook disabled")
-        return 
-    end
-    
-    local old_namecall = mt.__namecall
-    safeSetReadonly(mt, false)
-    
-    mt.__namecall = safeNewCClosure(function(self, ...)
-        local method = safeGetNamecallMethod()
-        
-        if _G.RockHub_BlatantActive and not safeCheckCaller() then
-            local remoteName = self.Name
-            
-            if method == "InvokeServer" then
-                if remoteName == "RequestFishingMinigameStarted" or 
-                   remoteName == "ChargeFishingRod" or 
-                   remoteName == "UpdateAutoFishingState" then
-                    return nil
-                end
-            elseif method == "FireServer" and remoteName == "FishingCompleted" then
-                return nil
-            end
-        end
-        
-        return old_namecall(self, ...)
-    end)
-    
-    safeSetReadonly(mt, true)
-    print("✅ Namecall hook installed")
-end)
-
--- Visual Suppressor
-local function SuppressGameVisuals(active)
-    pcall(function()
-        local TextController = require(ReplicatedStorage.Controllers.TextNotificationController)
-        
-        if active then
-            if not TextController._OldDeliver then 
-                TextController._OldDeliver = TextController.DeliverNotification 
-            end
-            
-            TextController.DeliverNotification = function(self, data)
-                if data and data.Text then
-                    local text = tostring(data.Text)
-                    if text:find("Auto Fishing") or text:find("Reach Level") then
-                        return
-                    end
-                end
-                return TextController._OldDeliver(self, data)
-            end
-        elseif TextController._OldDeliver then
-            TextController.DeliverNotification = TextController._OldDeliver
-            TextController._OldDeliver = nil
-        end
-    end)
-
-    if active then
-        task.spawn(function()
-            local CollectionService = game:GetService("CollectionService")
-            local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
-            
-            local InactiveColor = ColorSequence.new({
-                ColorSequenceKeypoint.new(0, Color3.fromHex("ff5d60")),
-                ColorSequenceKeypoint.new(1, Color3.fromHex("ff2256"))
-            })
-
-            while _G.RockHub_BlatantActive do
-                local targets = CollectionService:GetTagged("AutoFishingButton")
-                
-                if #targets == 0 then
-                    local btn = PlayerGui:FindFirstChild("Backpack")
-                    if btn then
-                        btn = btn:FindFirstChild("AutoFishingButton")
-                        if btn then targets = {btn} end
-                    end
-                end
-
-                for _, btn in ipairs(targets) do
-                    local grad = btn:FindFirstChild("UIGradient")
-                    if grad then 
-                        grad.Color = InactiveColor 
-                    end
-                end
-                
-                task.wait(0.1)
-            end
-        end)
-    end
-end
-
--- Instant Fishing Core
+-- ==================== BLATANT FISHING SYSTEM (FROM REFERENCE) ====================
+-- Instant fishing with proper sequencing
 local function runBlatantInstant()
     if not blatantInstantState or isFishingInProgress then return end
     
@@ -630,11 +590,11 @@ end
 
 -- ==================== CREATE WINDUI ====================
 local Window = WindUI:CreateWindow({
-    Title = "Raditya Webhook + Fishing v2.0",
+    Title = "Raditya Webhook + Disconnect v3.0",
     Icon = "rbxassetid://116236936447443",
-    Author = "Raditya (Updated)",
-    Folder = "RadityaWebhookV2",
-    Size = UDim2.fromOffset(620, 420),
+    Author = "Raditya (Disconnect Update)",
+    Folder = "RadityaWebhookV3",
+    Size = UDim2.fromOffset(620, 450),
     MinSize = Vector2.new(560, 250),
     MaxSize = Vector2.new(950, 760),
     Transparent = true,
@@ -660,7 +620,7 @@ local WebhookTab = Window:Tab({
 })
 
 local webhooksec = WebhookTab:Section({
-    Title = "Webhook Configuration",
+    Title = "Fish Webhook Configuration",
 })
 
 webhooksec:Input({
@@ -668,7 +628,7 @@ webhooksec:Input({
     Placeholder = "https://discord.com/api/webhooks/...",
     Callback = function(input) 
         WEBHOOK_URL = input 
-        print("Webhook URL updated")
+        print("Fish Webhook URL updated")
     end
 })
 
@@ -678,7 +638,7 @@ webhooksec:Toggle({
     Value = false,
     Callback = function(state)
         isWebhookEnabled = state
-        local msg = state and "Webhook Enabled!" or "Webhook Disabled!"
+        local msg = state and "Fish Webhook Enabled!" or "Fish Webhook Disabled!"
         local icon = state and "check" or "x"
         WindUI:Notify({Title = msg, Duration = 3, Icon = icon})
     end
@@ -712,7 +672,7 @@ webhooksec:Dropdown({
 })
 
 webhooksec:Button({
-    Title = "Test Webhook",
+    Title = "Test Fish Webhook",
     Description = "Send a test message",
     Icon = "send",
     Callback = function()
@@ -727,7 +687,7 @@ webhooksec:Button({
         end
         
         local testEmbed = {
-            title = "🎣 Raditya Webhook Test (v2.0)",
+            title = "🎣 Raditya Fish Webhook Test (v3.0)",
             description = "Test successful from updated script!",
             color = 0x00FF00,
             fields = {
@@ -735,7 +695,7 @@ webhooksec:Button({
                 {name = "User", value = LocalPlayer.Name, inline = true},
                 {name = "FPS", value = tostring(performanceStats.fps), inline = true}
             },
-            footer = {text = "Raditya Webhook v2.0"},
+            footer = {text = "Raditya Webhook v3.0"},
             timestamp = os.date("!%Y-%m-%dT%H:%M:%S")
         }
         
@@ -745,6 +705,93 @@ webhooksec:Button({
         else
             WindUI:Notify({Title = "Test Failed!", Content = msg, Duration = 3, Icon = "x"})
         end
+    end
+})
+
+-- ==================== DISCONNECT WEBHOOK SECTION ====================
+local disconnectSec = WebhookTab:Section({
+    Title = "Disconnect Alert Configuration",
+})
+
+disconnectSec:Input({
+    Title = "Disconnect Webhook URL",
+    Placeholder = "https://discord.com/api/webhooks/...",
+    Description = "Separate webhook for disconnect alerts",
+    Callback = function(input)
+        DISCONNECT_WEBHOOK_URL = input
+        print("Disconnect Webhook URL updated")
+    end
+})
+
+disconnectSec:Input({
+    Title = "Discord User ID (Optional)",
+    Placeholder = "123456789012345678",
+    Description = "Your Discord ID for @ mentions",
+    Callback = function(input)
+        DISCORD_USER_ID = input:gsub("%D", "")
+        print("Discord User ID updated:", DISCORD_USER_ID)
+    end
+})
+
+disconnectSec:Toggle({
+    Title = "Enable Disconnect Alerts",
+    Description = "Get notified when disconnected",
+    Value = false,
+    Callback = function(state)
+        isDisconnectWebhookEnabled = state
+        
+        if state then
+            if DISCONNECT_WEBHOOK_URL == "" then
+                WindUI:Notify({
+                    Title = "Warning",
+                    Content = "Set disconnect webhook URL first!",
+                    Duration = 3,
+                    Icon = "alert-triangle"
+                })
+                isDisconnectWebhookEnabled = false
+                return
+            end
+            
+            StartDisconnectMonitor()
+            WindUI:Notify({
+                Title = "Disconnect Monitor ON",
+                Content = "You'll be notified on disconnect",
+                Duration = 3,
+                Icon = "shield"
+            })
+        else
+            WindUI:Notify({
+                Title = "Disconnect Monitor OFF",
+                Duration = 2,
+                Icon = "shield-off"
+            })
+        end
+    end
+})
+
+disconnectSec:Button({
+    Title = "Test Disconnect Webhook",
+    Description = "Send test disconnect alert",
+    Icon = "alert-circle",
+    Callback = function()
+        if DISCONNECT_WEBHOOK_URL == "" then
+            WindUI:Notify({
+                Title = "Error",
+                Content = "Set disconnect webhook URL first!",
+                Duration = 3,
+                Icon = "x"
+            })
+            return
+        end
+        
+        hasSentDisconnect = false -- Reset flag for testing
+        SendDisconnectWebhook("Manual Test - Disconnect Detection")
+        WindUI:Notify({
+            Title = "Test Sent!",
+            Content = "Check your Discord!",
+            Duration = 3,
+            Icon = "check"
+        })
     end
 })
 
@@ -778,7 +825,7 @@ blatant:Input({
     Title = "Loop Interval (seconds)",
     Description = "Time between fishing cycles",
     Value = tostring(loopInterval),
-    Placeholder = "0.25",
+    Placeholder = "0.3",
     Callback = function(input)
         local val = tonumber(input)
         if val and val >= 0.1 and val <= 5 then 
@@ -792,7 +839,7 @@ blatant:Input({
     Title = "Complete Delay (seconds)",
     Description = "Delay before completing",
     Value = tostring(completeDelay),
-    Placeholder = "0.08",
+    Placeholder = "0.1",
     Callback = function(input)
         local val = tonumber(input)
         if val and val >= 0.05 and val <= 1 then 
@@ -806,7 +853,7 @@ blatant:Input({
     Title = "Cancel Delay (seconds)",
     Description = "Delay before canceling",
     Value = tostring(cancelDelay),
-    Placeholder = "0.04",
+    Placeholder = "0.05",
     Callback = function(input)
         local val = tonumber(input)
         if val and val >= 0.01 and val <= 1 then 
@@ -823,8 +870,6 @@ blatant:Toggle({
     Callback = function(state)
         blatantInstantState = state
         _G.RockHub_BlatantActive = state
-        
-        SuppressGameVisuals(state)
         
         if state then
             -- Enable auto fishing
@@ -901,314 +946,52 @@ blatant:Paragraph({
 
 -- ==================== MISC TAB ====================
 local MiscTab = Window:Tab({
-    Title = "Misc",
-    Icon = "settings",
-})
-
-local miscSec = MiscTab:Section({
-    Title = "Utility Features",
-})
-
--- FPS Overlay
-local fpsOverlayEnabled = false
-local fpsOverlayGui = nil
-
-local function createFPSOverlay()
-    if fpsOverlayGui then
-        fpsOverlayGui:Destroy()
-        fpsOverlayGui = nil
-    end
-    
-    fpsOverlayGui = Instance.new("ScreenGui")
-    fpsOverlayGui.Name = "RadityaFPSOverlay"
-    fpsOverlayGui.ResetOnSpawn = false
-    fpsOverlayGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    
-    local frame = Instance.new("Frame")
-    frame.Name = "FPSFrame"
-    frame.Size = UDim2.new(0, 220, 0, 90)
-    frame.Position = UDim2.new(0, 10, 0, 10)
-    frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    frame.BackgroundTransparency = 0.25
-    frame.BorderSizePixel = 0
-    frame.Parent = fpsOverlayGui
-    
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 10)
-    corner.Parent = frame
-    
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = Color3.fromRGB(255, 105, 180)
-    stroke.Thickness = 2
-    stroke.Transparency = 0.4
-    stroke.Parent = frame
-    
-    local fpsLabel = Instance.new("TextLabel")
-    fpsLabel.Name = "FPSLabel"
-    fpsLabel.Size = UDim2.new(1, -10, 0, 28)
-    fpsLabel.Position = UDim2.new(0, 5, 0, 5)
-    fpsLabel.BackgroundTransparency = 1
-    fpsLabel.Text = "FPS: --"
-    fpsLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    fpsLabel.TextSize = 18
-    fpsLabel.Font = Enum.Font.GothamBold
-    fpsLabel.TextXAlignment = Enum.TextXAlignment.Left
-    fpsLabel.Parent = frame
-    
-    local pingLabel = Instance.new("TextLabel")
-    pingLabel.Name = "PingLabel"
-    pingLabel.Size = UDim2.new(1, -10, 0, 28)
-    pingLabel.Position = UDim2.new(0, 5, 0, 33)
-    pingLabel.BackgroundTransparency = 1
-    pingLabel.Text = "Ping: --"
-    pingLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    pingLabel.TextSize = 18
-    pingLabel.Font = Enum.Font.GothamBold
-    pingLabel.TextXAlignment = Enum.TextXAlignment.Left
-    pingLabel.Parent = frame
-    
-    local memLabel = Instance.new("TextLabel")
-    memLabel.Name = "MemLabel"
-    memLabel.Size = UDim2.new(1, -10, 0, 24)
-    memLabel.Position = UDim2.new(0, 5, 0, 61)
-    memLabel.BackgroundTransparency = 1
-    memLabel.Text = "Mem: -- MB"
-    memLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-    memLabel.TextSize = 14
-    memLabel.Font = Enum.Font.Gotham
-    memLabel.TextXAlignment = Enum.TextXAlignment.Left
-    memLabel.Parent = frame
-    
-    local success = pcall(function()
-        fpsOverlayGui.Parent = game:GetService("CoreGui")
-    end)
-    
-    if not success then
-        fpsOverlayGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
-    end
-    
-    task.spawn(function()
-        while fpsOverlayEnabled and fpsOverlayGui and fpsOverlayGui.Parent do
-            task.wait(0.5)
-            
-            local fps = performanceStats.fps
-            local ping = performanceStats.ping
-            local mem = performanceStats.memory
-            
-            -- FPS coloring
-            local fpsColor = Color3.fromRGB(0, 255, 0)
-            if fps < 30 then
-                fpsColor = Color3.fromRGB(255, 0, 0)
-            elseif fps < 50 then
-                fpsColor = Color3.fromRGB(255, 255, 0)
-            end
-            
-            -- Ping coloring
-            local pingColor = Color3.fromRGB(0, 255, 0)
-            if ping > 200 then
-                pingColor = Color3.fromRGB(255, 0, 0)
-            elseif ping > 100 then
-                pingColor = Color3.fromRGB(255, 255, 0)
-            end
-            
-            fpsLabel.Text = string.format("FPS: %d", fps)
-            fpsLabel.TextColor3 = fpsColor
-            
-            pingLabel.Text = string.format("Ping: %d ms", ping)
-            pingLabel.TextColor3 = pingColor
-            
-            memLabel.Text = string.format("Mem: %d MB", mem)
-        end
-    end)
-end
-
-local function removeFPSOverlay()
-    if fpsOverlayGui then
-        fpsOverlayGui:Destroy()
-        fpsOverlayGui = nil
-    end
-end
-
-miscSec:Toggle({
-    Title = "Show FPS & Ping Overlay",
-    Description = "Real-time performance stats on screen",
-    Value = false,
-    Callback = function(state)
-        fpsOverlayEnabled = state
-        if state then
-            createFPSOverlay()
-            WindUI:Notify({
-                Title = "Overlay Enabled", 
-                Content = "Performance stats visible!",
-                Duration = 3, 
-                Icon = "eye"
-            })
-        else
-            removeFPSOverlay()
-            WindUI:Notify({
-                Title = "Overlay Disabled", 
-                Duration = 2, 
-                Icon = "eye-off"
-            })
-        end
-    end
-})
-
--- Anti-AFK
-local antiAFKEnabled = false
-local antiAFKConnection = nil
-
-miscSec:Toggle({
-    Title = "Anti-AFK",
-    Description = "Prevent being kicked for inactivity",
-    Value = false,
-    Callback = function(state)
-        antiAFKEnabled = state
-        
-        if state then
-            local VirtualUser = game:GetService("VirtualUser")
-            antiAFKConnection = LocalPlayer.Idled:Connect(function()
-                VirtualUser:CaptureController()
-                VirtualUser:ClickButton2(Vector2.new())
-            end)
-            WindUI:Notify({
-                Title = "Anti-AFK Enabled", 
-                Duration = 3, 
-                Icon = "shield"
-            })
-        else
-            if antiAFKConnection then
-                antiAFKConnection:Disconnect()
-                antiAFKConnection = nil
-            end
-            WindUI:Notify({
-                Title = "Anti-AFK Disabled", 
-                Duration = 2, 
-                Icon = "shield-off"
-            })
-        end
-    end
-})
-
--- Auto Reconnect
-local autoReconnectEnabled = false
-
-miscSec:Toggle({
-    Title = "Auto Reconnect",
-    Description = "Auto rejoin if disconnected",
-    Value = false,
-    Callback = function(state)
-        autoReconnectEnabled = state
-        
-        if state then
-            task.spawn(function()
-                local CoreGui = game:GetService("CoreGui")
-                
-                local function setupReconnect()
-                    local success = pcall(function()
-                        CoreGui.RobloxPromptGui.promptOverlay.ChildAdded:Connect(function(child)
-                            if child.Name == 'ErrorPrompt' and child:FindFirstChild("MessageArea") then
-                                task.wait(0.5)
-                                TeleportService:Teleport(game.PlaceId, LocalPlayer)
-                            end
-                        end)
-                    end)
-                    
-                    if not success then
-                        game:GetService("GuiService").ErrorMessageChanged:Connect(function()
-                            task.wait(1)
-                            TeleportService:Teleport(game.PlaceId, LocalPlayer)
-                        end)
-                    end
-                end
-                
-                setupReconnect()
-            end)
-            
-            WindUI:Notify({
-                Title = "Auto Reconnect ON", 
-                Content = "Will rejoin automatically",
-                Duration = 3, 
-                Icon = "refresh-cw"
-            })
-        else
-            WindUI:Notify({
-                Title = "Auto Reconnect OFF", 
-                Content = "Restart script to fully disable",
-                Duration = 3, 
-                Icon = "x"
-            })
-        end
-    end
-})
-
-miscSec:Button({
-    Title = "Rejoin Server",
-    Description = "Manually rejoin current server",
-    Icon = "repeat",
-    Callback = function()
-        TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
-    end
-})
-
-miscSec:Button({
-    Title = "Server Hop",
-    Description = "Join a different server",
-    Icon = "shuffle",
-    Callback = function()
-        local success = pcall(function()
-            local servers = game.HttpService:JSONDecode(
-                game:HttpGet(string.format(
-                    "https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Asc&limit=100", 
-                    game.PlaceId
-                ))
-            )
-            
-            if servers and servers.data then
-                for _, server in pairs(servers.data) do
-                    if server.id ~= game.JobId then
-                        TeleportService:TeleportToPlaceInstance(game.PlaceId, server.id, LocalPlayer)
-                        break
-                    end
-                end
-            end
-        end)
-        
-        if not success then
-            WindUI:Notify({
-                Title = "Server Hop Failed", 
-                Content = "Trying alternate method...",
-                Duration = 3,
-                Icon = "alert-circle"
-            })
-            TeleportService:Teleport(game.PlaceId, LocalPlayer)
-        end
-    end
-})
-
--- ==================== INFO TAB ====================
-local InfoTab = Window:Tab({
     Title = "Info",
     Icon = "info",
 })
 
-local perfSec = InfoTab:Section({
-    Title = "Performance Information",
+local infoSec = MiscTab:Section({
+    Title = "Script Information",
 })
 
-local fpsInfoLabel = perfSec:Paragraph({
-    Title = "FPS: Calculating...",
-    Content = "Real-time frames per second"
+infoSec:Paragraph({
+    Title = "Version & Features",
+    Content = [[
+Version: v3.0 - Disconnect Detection Update
+
+Features:
+- Discord Fish Webhook
+- Disconnect Alerts with @ mention
+- Blatant Instant Fishing
+- Mobile Compatibility
+- Real-time Stats
+]]
 })
 
-local pingInfoLabel = perfSec:Paragraph({
-    Title = "Ping: Calculating...",
-    Content = "Network latency (milliseconds)"
+infoSec:Paragraph({
+    Title = "Disconnect Monitor",
+    Content = [[
+The disconnect monitor will automatically:
+✅ Detect kicks/disconnects
+✅ Send webhook with reason
+✅ Tag your Discord (if ID set)
+✅ Show last stats (coins, fish)
+⚠️ Won't trigger on teleports
+]]
 })
 
-local memInfoLabel = perfSec:Paragraph({
-    Title = "Memory: Calculating...",
-    Content = "Instance memory usage"
+local perfSec = MiscTab:Section({
+    Title = "Performance",
+})
+
+local fpsLabel = perfSec:Paragraph({
+    Title = "FPS: --",
+    Content = "Current frames per second"
+})
+
+local pingLabel = perfSec:Paragraph({
+    Title = "Ping: --",
+    Content = "Network latency"
 })
 
 task.spawn(function()
@@ -1216,116 +999,27 @@ task.spawn(function()
         pcall(function()
             local fps = performanceStats.fps
             local ping = performanceStats.ping
-            local mem = performanceStats.memory
             
-            -- FPS status
-            local fpsStatus = "🟢"
-            if fps < 30 then
-                fpsStatus = "🔴"
-            elseif fps < 50 then
-                fpsStatus = "🟡"
-            end
+            local fpsStatus = fps >= 60 and "🟢" or (fps >= 30 and "🟡" or "🔴")
+            local pingStatus = ping < 100 and "🟢" or (ping < 200 and "🟡" or "🔴")
             
-            -- Ping status
-            local pingStatus = "🟢"
-            if ping > 200 then
-                pingStatus = "🔴"
-            elseif ping > 100 then
-                pingStatus = "🟡"
-            end
-            
-            -- Memory status
-            local memStatus = "🟢"
-            if mem > 1000 then
-                memStatus = "🔴"
-            elseif mem > 500 then
-                memStatus = "🟡"
-            end
-            
-            fpsInfoLabel:SetTitle(string.format("%s FPS: %d", fpsStatus, fps))
-            pingInfoLabel:SetTitle(string.format("%s Ping: %d ms", pingStatus, ping))
-            memInfoLabel:SetTitle(string.format("%s Memory: %d MB", memStatus, mem))
+            fpsLabel:SetTitle(string.format("%s FPS: %d", fpsStatus, fps))
+            pingLabel:SetTitle(string.format("%s Ping: %d ms", pingStatus, ping))
         end)
     end
 end)
 
-perfSec:Paragraph({
-    Title = "Performance Guide",
-    Content = [[
-🟢 Good • 🟡 Medium • 🔴 Poor
-
-FPS: 60+ (Good), 30-59 (Medium), <30 (Poor)
-Ping: <100ms (Good), 100-200ms (Medium), >200ms (Poor)
-Memory: <500MB (Good), 500-1000MB (Medium), >1000MB (Poor)
-]]
-})
-
-local infoSec = InfoTab:Section({
-    Title = "Script Information",
-})
-
-infoSec:Paragraph({
-    Title = "Version",
-    Content = "v2.0 - Updated Build"
-})
-
-infoSec:Paragraph({
-    Title = "Author",
-    Content = "Raditya (Enhanced by AI)"
-})
-
-infoSec:Paragraph({
-    Title = "Executor Compatibility",
-    Content = string.format([[
-Current Executor: %s
-
-✅ Delta (Android)
-✅ Mobile Executors
-✅ Desktop Executors
-✅ Auto-detection enabled
-]], identifyexecutor and identifyexecutor() or "Unknown")
-})
-
-infoSec:Paragraph({
-    Title = "Features",
-    Content = [[
-- Discord Webhook Notifications
-- Blatant Instant Fishing
-- FPS & Ping Overlay
-- Anti-AFK Protection
-- Auto Reconnect
-- Server Hopping
-- Performance Monitoring
-- Mobile Compatibility
-]]
-})
-
-infoSec:Button({
-    Title = "Copy Discord Support",
-    Description = "Get help and updates",
-    Icon = "message-circle",
-    Callback = function()
-        setclipboard("https://discord.gg/raditya") -- Replace with actual invite
-        WindUI:Notify({
-            Title = "Copied!", 
-            Content = "Discord invite copied to clipboard",
-            Duration = 3,
-            Icon = "check"
-        })
-    end
-})
-
 -- ==================== FINAL NOTIFICATIONS ====================
 print("=" .. string.rep("=", 50))
-print("✅ Raditya Webhook + Fishing v2.0 Loaded!")
-print("📊 Performance Monitor Active")
-print("🎣 Fishing System Ready")
-print("📨 Webhook System Ready")
+print("✅ Raditya Webhook + Disconnect v3.0 Loaded!")
+print("📨 Fish Webhook System Ready")
+print("🔔 Disconnect Monitor Ready")
+print("🎣 Blatant Fishing Ready")
 print("=" .. string.rep("=", 50))
 
 WindUI:Notify({
-    Title = "Script Loaded Successfully!",
-    Content = "Raditya Webhook v2.0 - All systems operational",
+    Title = "Script Loaded!",
+    Content = "Raditya v3.0 - Disconnect Detection Added!",
     Duration = 5,
     Icon = "check-circle"
 })
