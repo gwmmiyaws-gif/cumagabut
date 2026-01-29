@@ -1,6 +1,6 @@
 --!strict
 -- RockHub Premium - Blatant Fishing & Auto Totem Only
--- Fixed: Auto Teleport + Status Display
+-- Fixed: Spawn at Current Position (No Teleport)
 
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 local Window = WindUI:CreateWindow({
@@ -34,8 +34,6 @@ type CFrame = CFrame
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local Workspace = game:GetService("Workspace")
 
 local LocalPlayer: Player = Players.LocalPlayer
 local RPath: {string} = {"Packages", "_Index", "sleitnick_net@0.2.0", "net"}
@@ -61,20 +59,6 @@ local function GetHRP(): BasePart?
         Character = LocalPlayer.CharacterAdded:Wait()
     end
     return Character:WaitForChild("HumanoidRootPart", 5) :: BasePart
-end
-
-local function TeleportToLookAt(position: Vector3, lookVector: Vector3): ()
-    local hrp = GetHRP()
-    if hrp and typeof(position) == "Vector3" and typeof(lookVector) == "Vector3" then
-        local targetCFrame = CFrame.new(position, position + lookVector)
-        hrp.CFrame = targetCFrame * CFrame.new(0, 0.5, 0)
-        
-        WindUI:Notify({
-            Title = "Teleport Sukses!",
-            Duration = 2,
-            Icon = "map-pin",
-        })
-    end
 end
 
 -- =====================================================
@@ -104,16 +88,12 @@ local loopInterval: number = 1.715
 _G.RockHub_BlatantActive = false
 
 -- =====================================================
--- TOTEM VARIABLES (ENHANCED)
+-- TOTEM VARIABLES
 -- =====================================================
 local AUTO_TOTEM_ACTIVE: boolean = false
 local AUTO_TOTEM_THREAD: thread? = nil
 local selectedTotemName: string = "Luck Totem"
 local currentTotemExpiry: number = 0
-
--- Lokasi Spawn Totem (Fisherman Island - Area Aman)
-local TOTEM_SPAWN_POS: Vector3 = Vector3.new(74.030, 9.530, 2705.230)
-local TOTEM_SPAWN_LOOK: Vector3 = Vector3.new(0, 0, -1)
 
 local TOTEM_DATA: {[string]: {Id: number, Duration: number}} = {
     ["Luck Totem"] = {Id = 1, Duration = 3601},
@@ -123,7 +103,7 @@ local TOTEM_DATA: {[string]: {Id: number, Duration: number}} = {
 
 local TOTEM_NAMES: {string} = {"Luck Totem", "Mutation Totem", "Shiny Totem"}
 
--- UI Status Paragraph (akan diinisialisasi nanti)
+-- UI Status Paragraph
 local TOTEM_STATUS_PARAGRAPH: any = nil
 
 -- =====================================================
@@ -301,7 +281,7 @@ local function runBlatantInstant(): ()
 end
 
 -- =====================================================
--- TOTEM LOGIC (FIXED WITH TELEPORT)
+-- TOTEM LOGIC (NO TELEPORT - SPAWN AT CURRENT POSITION)
 -- =====================================================
 local function GetPlayerDataReplion()
     local ReplionModule = ReplicatedStorage:WaitForChild("Packages"):WaitForChild("Replion", 10)
@@ -333,7 +313,6 @@ local function GetTotemUUID(name: string): string?
     return nil
 end
 
--- Helper untuk unequip semua item (biar ga bentrok)
 local function UnequipAllItems(): ()
     if not RE_UnequipItem then return end
     
@@ -367,10 +346,15 @@ local function RunAutoTotemLoop(): ()
     end
     
     AUTO_TOTEM_THREAD = task.spawn(function()
-        -- [1] TELEPORT KE LOKASI SPAWN TOTEM
-        UpdateTotemStatus("⚡ Preparing...", "Teleporting to spawn location...")
-        TeleportToLookAt(TOTEM_SPAWN_POS, TOTEM_SPAWN_LOOK)
-        task.wait(1.5) -- Tunggu character settle
+        -- [INFO] Show current position
+        local hrp = GetHRP()
+        if hrp then
+            local pos = hrp.Position
+            UpdateTotemStatus(
+                "📍 Ready at Current Position",
+                string.format("Spawning at: X:%.1f Y:%.1f Z:%.1f", pos.X, pos.Y, pos.Z)
+            )
+        end
         
         while AUTO_TOTEM_ACTIVE do
             local timeLeft: number = currentTotemExpiry - os.time()
@@ -384,17 +368,17 @@ local function RunAutoTotemLoop(): ()
                     string.format("Next Spawn: %02d:%02d", minutes, seconds)
                 )
             else
-                -- [2] CEK INVENTORY
+                -- [1] CEK INVENTORY
                 UpdateTotemStatus("🔍 Checking...", "Searching for " .. selectedTotemName .. " in inventory...")
                 local uuid: string? = GetTotemUUID(selectedTotemName)
                 
                 if uuid then
-                    -- [3] UNEQUIP SEMUA (Agar tidak bentrok)
+                    -- [2] UNEQUIP SEMUA
                     UpdateTotemStatus("🔧 Preparing...", "Clearing equipped items...")
                     UnequipAllItems()
                     task.wait(0.3)
                     
-                    -- [4] EQUIP TOTEM
+                    -- [3] EQUIP TOTEM
                     UpdateTotemStatus("📦 Equipping...", "Equipping " .. selectedTotemName .. "...")
                     pcall(function()
                         if RE_EquipItem then
@@ -403,8 +387,8 @@ local function RunAutoTotemLoop(): ()
                     end)
                     task.wait(0.5)
                     
-                    -- [5] EQUIP KE HOTBAR (SLOT 2)
-                    UpdateTotemStatus("🎯 Activating...", "Placing totem into hotbar slot...")
+                    -- [4] EQUIP KE HOTBAR (SLOT 2)
+                    UpdateTotemStatus("🎯 Activating...", "Placing totem into hotbar slot 2...")
                     pcall(function()
                         if RE_EquipToolFromHotbar then
                             RE_EquipToolFromHotbar:FireServer(2)
@@ -412,18 +396,18 @@ local function RunAutoTotemLoop(): ()
                     end)
                     task.wait(0.8)
                     
-                    -- [6] SPAWN TOTEM
-                    UpdateTotemStatus("✨ Spawning...", "Spawning " .. selectedTotemName .. "...")
+                    -- [5] SPAWN TOTEM (DI POSISI SAAT INI)
+                    UpdateTotemStatus("✨ Spawning...", "Spawning " .. selectedTotemName .. " at current position...")
                     pcall(function() 
                         if RE_SpawnTotem then
                             RE_SpawnTotem:FireServer(uuid) 
                         end
                     end)
                     
-                    -- [7] SET TIMER
+                    -- [6] SET TIMER
                     currentTotemExpiry = os.time() + TOTEM_DATA[selectedTotemName].Duration
                     
-                    -- [8] AUTO RE-EQUIP ROD (3x untuk pastikan)
+                    -- [7] AUTO RE-EQUIP ROD
                     task.spawn(function() 
                         for i = 1, 3 do 
                             task.wait(0.2) 
@@ -435,9 +419,14 @@ local function RunAutoTotemLoop(): ()
                         end 
                     end)
                     
+                    -- [8] SUCCESS NOTIFICATION
+                    local hrp = GetHRP()
+                    local spawnPos = hrp and hrp.Position or Vector3.new(0,0,0)
+                    
                     WindUI:Notify({
                         Title = "Totem Spawned!",
-                        Content = selectedTotemName .. " successfully placed",
+                        Content = string.format("%s placed at X:%.1f Y:%.1f Z:%.1f", 
+                            selectedTotemName, spawnPos.X, spawnPos.Y, spawnPos.Z),
                         Duration = 3,
                         Icon = "check"
                     })
@@ -526,7 +515,6 @@ local togblat = blatant:Toggle({
         SuppressGameVisuals(state)
         
         if state then
-            -- Server State ON
             if RF_UpdateAutoFishingState then
                 pcall(function() RF_UpdateAutoFishingState:InvokeServer(true) end)
                 task.wait(0.5)
@@ -534,7 +522,6 @@ local togblat = blatant:Toggle({
                 pcall(function() RF_UpdateAutoFishingState:InvokeServer(true) end)
             end
 
-            -- Loop
             blatantLoopThread = task.spawn(function()
                 while blatantInstantState do
                     runBlatantInstant()
@@ -542,7 +529,6 @@ local togblat = blatant:Toggle({
                 end
             end)
 
-            -- Auto Equip
             if blatantEquipThread then 
                 task.cancel(blatantEquipThread) 
             end
@@ -564,7 +550,6 @@ local togblat = blatant:Toggle({
                 Icon = "zap"
             })
         else
-            -- Server State OFF
             if RF_UpdateAutoFishingState then
                 pcall(function() RF_UpdateAutoFishingState:InvokeServer(false) end)
             end
@@ -599,10 +584,9 @@ local totem = premium:Section({
     TextSize = 20
 })
 
--- [PERBAIKAN 1] Status Paragraph dengan Initialization
 TOTEM_STATUS_PARAGRAPH = totem:Paragraph({
     Title = "💤 Status: Idle",
-    Content = "Aktifkan toggle untuk memulai Auto Totem.\n\n⚠️ Pastikan kamu punya totem di inventory!",
+    Content = "Aktifkan toggle untuk spawn totem di posisi saat ini.\n\n⚠️ Pastikan kamu punya totem di inventory!",
     Icon = "clock"
 })
 
@@ -624,7 +608,7 @@ local choosetot = totem:Dropdown({
 
 local togtot = totem:Toggle({
     Title = "Enable Auto Totem (Single)",
-    Desc = "Auto spawn totem dengan teleport otomatis ke lokasi aman",
+    Desc = "Spawn totem di posisi saat ini (no teleport)",
     Value = false,
     Callback = function(state: boolean)
         AUTO_TOTEM_ACTIVE = state
@@ -632,7 +616,7 @@ local togtot = totem:Toggle({
             RunAutoTotemLoop()
             WindUI:Notify({
                 Title = "Auto Totem Started",
-                Content = "Sistem akan otomatis teleport & spawn totem",
+                Content = "Totem akan spawn di posisi kamu saat ini",
                 Duration = 3,
                 Icon = "play"
             })
@@ -656,11 +640,10 @@ local togtot = totem:Toggle({
     end
 })
 
--- [PERBAIKAN 2] Tombol Manual Spawn (Testing)
 totem:Button({
     Title = "Manual Spawn Once",
     Icon = "zap",
-    Desc = "Test spawn totem sekali (tanpa loop)",
+    Desc = "Test spawn totem sekali di posisi saat ini",
     Callback = function()
         local uuid: string? = GetTotemUUID(selectedTotemName)
         if uuid then
@@ -687,9 +670,13 @@ totem:Button({
                 end
             end)
             
+            local hrp = GetHRP()
+            local pos = hrp and hrp.Position or Vector3.new(0,0,0)
+            
             WindUI:Notify({
                 Title = "Totem Spawned",
-                Content = selectedTotemName .. " manually placed",
+                Content = string.format("%s at X:%.1f Y:%.1f Z:%.1f", 
+                    selectedTotemName, pos.X, pos.Y, pos.Z),
                 Duration = 3,
                 Icon = "check"
             })
@@ -708,7 +695,7 @@ totem:Button({
 -- FINALIZATION
 -- =====================================================
 Window:Tag({
-    Title = "Lite V1.1",
+    Title = "Lite V1.2",
     Color = Color3.fromHex("#F5C527"),
     Radius = 9,
 })
@@ -728,7 +715,7 @@ Window:EditOpenButton({
 })
 
 WindUI:Notify({
-    Title = "RockHub Lite V1.1 Loaded",
+    Title = "RockHub Lite V1.2 Loaded",
     Content = "Blatant Fishing & Auto Totem Ready",
     Duration = 5,
     Icon = "info"
