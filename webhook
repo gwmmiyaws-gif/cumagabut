@@ -1,13 +1,13 @@
 --!strict
--- RockHub Premium - Blatant Fishing & Auto Totem Only
+-- Plenger Hub Premium - Blatant Fishing & Auto Totem Only
 -- Fixed: Timer Persistent + Spawn at New Position
 
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 local Window = WindUI:CreateWindow({
-    Title = "RockHub - Fish It (Lite)",
-    Icon = "rbxassetid://116236936447443",
+    Title = "Plenger Hub - Fish It (Lite)",
+    Icon = "rbxassetid://7733779610",
     Author = "Premium Version",
-    Folder = "RockHub",
+    Folder = "PlengerHub",
     Size = UDim2.fromOffset(600, 360),
     MinSize = Vector2.new(560, 250),
     MaxSize = Vector2.new(950, 760),
@@ -85,7 +85,7 @@ local completeDelay: number = 3.055
 local cancelDelay: number = 0.3
 local loopInterval: number = 1.715
 
-_G.RockHub_BlatantActive = false
+_G.PlengerHub_BlatantActive = false
 
 -- =====================================================
 -- TOTEM VARIABLES (ENHANCED WITH PERSISTENT TIMER)
@@ -115,7 +115,7 @@ pcall(function()
     for _, v in pairs(getconnections(player.Idled)) do
         if v.Disable then
             v:Disable()
-            print("[RockHub Anti-AFK] ON")
+            print("[Plenger Hub Anti-AFK] ON")
         end
     end
 end)
@@ -135,15 +135,15 @@ task.spawn(function()
         local Old_Cast = FishingController.SendFishingRequestToServer
         
         FishingController.RequestChargeFishingRod = function(...)
-            if _G.RockHub_BlatantActive then 
+            if _G.PlengerHub_BlatantActive then 
                 return 
             end 
             return Old_Charge(...)
         end
         
         FishingController.SendFishingRequestToServer = function(...)
-            if _G.RockHub_BlatantActive then 
-                return false, "Blocked by RockHub" 
+            if _G.PlengerHub_BlatantActive then 
+                return false, "Blocked by Plenger Hub" 
             end
             return Old_Cast(...)
         end
@@ -157,7 +157,7 @@ setreadonly(mt, false)
 
 mt.__namecall = newcclosure(function(self: Instance, ...: any): any
     local method = getnamecallmethod()
-    if _G.RockHub_BlatantActive and not checkcaller() then
+    if _G.PlengerHub_BlatantActive and not checkcaller() then
         if method == "InvokeServer" and (
             self.Name == "RequestFishingMinigameStarted" or 
             self.Name == "ChargeFishingRod" or 
@@ -210,7 +210,7 @@ local function SuppressGameVisuals(active: boolean): ()
                 ColorSequenceKeypoint.new(1, Color3.fromHex("ff2256"))
             })
 
-            while _G.RockHub_BlatantActive do
+            while _G.PlengerHub_BlatantActive do
                 local targets: {Instance} = {}
                 
                 for _, btn in ipairs(CollectionService:GetTagged("AutoFishingButton")) do
@@ -557,7 +557,7 @@ local togblat = blatant:Toggle({
     Value = false,
     Callback = function(state: boolean)
         blatantInstantState = state
-        _G.RockHub_BlatantActive = state
+        _G.PlengerHub_BlatantActive = state
         
         SuppressGameVisuals(state)
         
@@ -740,8 +740,8 @@ Window:Tag({
 })
 
 Window:EditOpenButton({
-    Title = "RockHub - Fish It",
-    Icon = "rbxassetid://116236936447443",
+    Title = "Plenger Hub - Fish It",
+    Icon = "rbxassetid://7733779610",
     CornerRadius = UDim.new(0, 30),
     StrokeThickness = 1.5,
     Color = ColorSequence.new(
@@ -754,7 +754,7 @@ Window:EditOpenButton({
 })
 
 WindUI:Notify({
-    Title = "RockHub Lite V1.3 Loaded",
+    Title = "Plenger Hub Lite V1.3 Loaded",
     Content = "Smart Auto Totem Ready!",
     Duration = 5,
     Icon = "info"
