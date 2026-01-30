@@ -216,7 +216,7 @@ local function RunAutoTotemLoop()
 end
 
 local premium = Window:Tab({
-    Title = "Webhook Settings",
+    Title = "Auto Totem",
     Icon = "solar:golf-bold",
     IconColor = Color3.fromHex("#42f5b9"),
     IconShape = true,
