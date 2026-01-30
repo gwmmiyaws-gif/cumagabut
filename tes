@@ -1,6 +1,6 @@
 --!strict
 -- Plenger Hub Premium - Blatant Fishing & Auto Totem + Auto Favorite
--- Fixed: Timer Persistent + Spawn at New Position + ItemUtility Fix
+-- Delta Executor Compatible
 
 local WindUI
 
@@ -72,45 +72,95 @@ local RE_UnequipItem = GetRemote(RPath, "RE/UnequipItem") :: RemoteEvent?
 local RE_FavoriteItem = GetRemote(RPath, "RE/FavoriteItem") :: RemoteEvent?
 
 -- =====================================================
--- UTILITY MODULES (WITH BETTER LOADING)
+-- UTILITY MODULES (DELTA COMPATIBLE LOADING)
 -- =====================================================
 local ItemUtility = nil
 local TierUtility = nil
 local UtilitiesLoaded = false
 
--- Function to load utilities with retries
-local function LoadUtilities(): boolean
-    if UtilitiesLoaded then return true end
+-- Multiple loading attempts for Delta compatibility
+local function LoadUtilitiesWithRetry()
+    local attempts = {
+        -- Attempt 1: Original path
+        function()
+            local SharedFolder = ReplicatedStorage:WaitForChild("Shared", 5)
+            if SharedFolder then
+                ItemUtility = require(SharedFolder:WaitForChild("ItemUtility", 3))
+                TierUtility = require(SharedFolder:WaitForChild("TierUtility", 3))
+                return true
+            end
+            return false
+        end,
+        -- Attempt 2: Utilities path
+        function()
+            local UtilitiesFolder = ReplicatedStorage:WaitForChild("Utilities", 5)
+            if UtilitiesFolder then
+                ItemUtility = require(UtilitiesFolder:WaitForChild("ItemUtility", 3))
+                TierUtility = require(UtilitiesFolder:WaitForChild("TierUtility", 3))
+                return true
+            end
+            return false
+        end,
+        -- Attempt 3: Libraries path
+        function()
+            local LibrariesFolder = ReplicatedStorage:WaitForChild("Libraries", 5)
+            if LibrariesFolder then
+                ItemUtility = require(LibrariesFolder:WaitForChild("ItemUtility", 3))
+                TierUtility = require(LibrariesFolder:WaitForChild("TierUtility", 3))
+                return true
+            end
+            return false
+        end,
+        -- Attempt 4: Search descendants
+        function()
+            local itemUtilModule = nil
+            local tierUtilModule = nil
+            
+            for _, descendant in ipairs(ReplicatedStorage:GetDescendants()) do
+                if descendant.Name == "ItemUtility" and descendant:IsA("ModuleScript") then
+                    itemUtilModule = descendant
+                end
+                if descendant.Name == "TierUtility" and descendant:IsA("ModuleScript") then
+                    tierUtilModule = descendant
+                end
+                if itemUtilModule and tierUtilModule then
+                    break
+                end
+            end
+            
+            if itemUtilModule and tierUtilModule then
+                ItemUtility = require(itemUtilModule)
+                TierUtility = require(tierUtilModule)
+                return true
+            end
+            return false
+        end
+    }
     
-    local success = pcall(function()
-        local UtilitiesFolder = ReplicatedStorage:WaitForChild("Utilities", 10)
-        if not UtilitiesFolder then
-            error("Utilities folder not found")
+    for i, attemptFunc in ipairs(attempts) do
+        local success = pcall(function()
+            if attemptFunc() then
+                UtilitiesLoaded = true
+                print("[Plenger Hub] ✅ Utilities loaded successfully (Attempt " .. i .. ")")
+                return true
+            end
+        end)
+        
+        if success and UtilitiesLoaded then
+            return true
         end
         
-        local ItemUtilityModule = UtilitiesFolder:WaitForChild("ItemUtility", 5)
-        local TierUtilityModule = UtilitiesFolder:WaitForChild("TierUtility", 5)
-        
-        if ItemUtilityModule and TierUtilityModule then
-            ItemUtility = require(ItemUtilityModule)
-            TierUtility = require(TierUtilityModule)
-            UtilitiesLoaded = true
-            print("[Plenger Hub] Utilities loaded successfully!")
-        end
-    end)
+        task.wait(0.5)
+    end
     
-    return success and UtilitiesLoaded
+    warn("[Plenger Hub] ❌ All utility loading attempts failed")
+    return false
 end
 
--- Try loading utilities immediately
+-- Try loading utilities
 task.spawn(function()
-    task.wait(2) -- Wait for game to fully load
-    for i = 1, 5 do
-        if LoadUtilities() then
-            break
-        end
-        task.wait(1)
-    end
+    task.wait(2)
+    LoadUtilitiesWithRetry()
 end)
 
 -- =====================================================
@@ -156,6 +206,7 @@ local selectedMutations: {string} = {}
 
 -- UI Status Paragraph
 local TOTEM_STATUS_PARAGRAPH: any = nil
+local PlayerDataReplion = nil
 
 -- =====================================================
 -- ANTI-AFK
@@ -181,7 +232,7 @@ local Window = WindUI:CreateWindow({
     Transparent = true,
     IconSize = 24,
     NewElements = true,
-    Size = UDim2.fromOffset(600, 360),
+    Size = UDim2.fromOffset(600, 380),
     MinSize = Vector2.new(560, 250),
     MaxSize = Vector2.new(950, 760),
     ToggleKey = Enum.KeyCode.G,
@@ -218,21 +269,72 @@ local Window = WindUI:CreateWindow({
 -- AUTO FAVORITE/UNFAVORITE HELPER FUNCTIONS
 -- =====================================================
 local function GetPlayerDataReplion()
+    if PlayerDataReplion then return PlayerDataReplion end
+    
     local success, result = pcall(function()
-        local ReplionModule = ReplicatedStorage:WaitForChild("Packages", 10)
-        if not ReplionModule then return nil end
-        
-        ReplionModule = ReplionModule:WaitForChild("Replion", 10)
-        if not ReplionModule then return nil end
+        local ReplionModule = ReplicatedStorage:WaitForChild("Packages", 10):WaitForChild("Replion", 10)
+        if not ReplionModule then 
+            return nil 
+        end
         
         local ReplionClient = require(ReplionModule).Client
-        return ReplionClient:WaitReplion("Data", 10)
+        return ReplionClient:WaitReplion("Data", 5)
     end)
     
-    if success then
-        return result
+    if success and result then
+        PlayerDataReplion = result
+        print("[Plenger Hub] ✅ PlayerDataReplion loaded")
+    else
+        warn("[Plenger Hub] ❌ PlayerDataReplion FAILED!")
     end
-    return nil
+    
+    return PlayerDataReplion
+end
+
+local function GetFishNameAndRarity(item: any): (string, string)
+    local name = item.Identifier or "Unknown"
+    local rarity = item.Metadata and item.Metadata.Rarity or "COMMON"
+    local itemID = item.Id
+
+    local itemData = nil
+
+    if ItemUtility and itemID then
+        pcall(function()
+            itemData = ItemUtility:GetItemData(itemID)
+            if not itemData then
+                local numericID = tonumber(item.Id) or tonumber(item.Identifier)
+                if numericID then
+                    itemData = ItemUtility:GetItemData(numericID)
+                end
+            end
+        end)
+    end
+
+    if itemData and itemData.Data and itemData.Data.Name then
+        name = itemData.Data.Name
+    end
+
+    if item.Metadata and item.Metadata.Rarity then
+        rarity = item.Metadata.Rarity
+    elseif itemData and itemData.Probability and itemData.Probability.Chance and TierUtility then
+        local tierObj = nil
+        pcall(function()
+            tierObj = TierUtility:GetTierFromRarity(itemData.Probability.Chance)
+        end)
+
+        if tierObj and tierObj.Name then
+            rarity = tierObj.Name
+        end
+    end
+
+    return name, rarity
+end
+
+local function GetItemMutationString(item: any): string
+    if item.Metadata and item.Metadata.Shiny == true then 
+        return "Shiny" 
+    end
+    return item.Metadata and item.Metadata.VariantId or ""
 end
 
 local function getAutoFavoriteItemOptions(): {string}
@@ -264,82 +366,9 @@ local function getAutoFavoriteItemOptions(): {string}
     return itemNames
 end
 
--- Fallback method jika ItemUtility tidak tersedia
-local function GetFishNameAndRarity(item: any): (string, string)
-    -- Method 1: Use ItemUtility if available
-    if ItemUtility and TierUtility then
-        local success, itemName, rarity = pcall(function()
-            local name = ItemUtility:GetItemName(item)
-            local tier = ItemUtility:GetItemTier(item)
-            local rarityName = TierUtility:GetTierName(tier)
-            return name, rarityName
-        end)
-        
-        if success then
-            return itemName, rarity
-        end
-    end
-    
-    -- Method 2: Direct item properties (fallback)
-    local itemName = "Unknown"
-    local rarity = "Common"
-    
-    if item.Name then
-        itemName = tostring(item.Name)
-    elseif item.ItemName then
-        itemName = tostring(item.ItemName)
-    elseif item.Id then
-        -- Try to get name from ReplicatedStorage Items
-        local itemsFolder = ReplicatedStorage:FindFirstChild("Items")
-        if itemsFolder then
-            local itemData = itemsFolder:FindFirstChild(tostring(item.Id))
-            if itemData then
-                itemName = itemData.Name
-            end
-        end
-    end
-    
-    -- Try to get rarity
-    if item.Rarity then
-        rarity = tostring(item.Rarity)
-    elseif item.Tier then
-        local tierNames = {
-            [1] = "Common",
-            [2] = "Uncommon", 
-            [3] = "Rare",
-            [4] = "Epic",
-            [5] = "Legendary",
-            [6] = "Mythic",
-            [7] = "SECRET"
-        }
-        rarity = tierNames[tonumber(item.Tier)] or "Common"
-    end
-    
-    return itemName, rarity
-end
-
-local function GetItemMutationString(item: any): string
-    if not item.Mutations or type(item.Mutations) ~= "table" then
-        return "None"
-    end
-    
-    local mutations: {string} = {}
-    for mutation, _ in pairs(item.Mutations) do
-        table.insert(mutations, tostring(mutation))
-    end
-    
-    if #mutations == 0 then
-        return "None"
-    end
-    
-    table.sort(mutations)
-    return table.concat(mutations, ", ")
-end
-
 local function GetItemsToFavorite(): {string}
     local replion = GetPlayerDataReplion()
     if not replion then 
-        print("[Plenger Hub] Failed to get Replion data")
         return {} 
     end
 
@@ -348,7 +377,6 @@ local function GetItemsToFavorite(): {string}
     end)
     
     if not success or not inventoryData or not inventoryData.Items then 
-        print("[Plenger Hub] Failed to get inventory data")
         return {} 
     end
 
@@ -381,13 +409,8 @@ local function GetItemsToFavorite(): {string}
             isMatch = true
         end
 
-        if not isMatch and isMutationFilterActive then
-            for _, selectedMutation in ipairs(selectedMutations) do
-                if string.find(mutationFilterString, selectedMutation) then
-                    isMatch = true
-                    break
-                end
-            end
+        if not isMatch and isMutationFilterActive and table.find(selectedMutations, mutationFilterString) then
+            isMatch = true
         end
 
         if isMatch then
@@ -400,13 +423,17 @@ end
 
 local function GetItemsToUnfavorite(): {string}
     local replion = GetPlayerDataReplion()
-    if not replion then return {} end
+    if not replion then 
+        return {} 
+    end
 
     local success, inventoryData = pcall(function() 
         return replion:GetExpect("Inventory") 
     end)
     
-    if not success or not inventoryData or not inventoryData.Items then return {} end
+    if not success or not inventoryData or not inventoryData.Items then 
+        return {} 
+    end
 
     local itemsToUnfavorite: {string} = {}
     
@@ -425,16 +452,7 @@ local function GetItemsToUnfavorite(): {string}
         
         local passesRarity = #selectedRarities > 0 and table.find(selectedRarities, rarity)
         local passesName = #selectedItemNames > 0 and table.find(selectedItemNames, name)
-        local passesMutation = false
-        
-        if #selectedMutations > 0 then
-            for _, selectedMutation in ipairs(selectedMutations) do
-                if string.find(mutationFilterString, selectedMutation) then
-                    passesMutation = true
-                    break
-                end
-            end
-        end
+        local passesMutation = #selectedMutations > 0 and table.find(selectedMutations, mutationFilterString)
         
         local isTargetedForUnfavorite = passesRarity or passesName or passesMutation
         
@@ -446,10 +464,16 @@ local function GetItemsToUnfavorite(): {string}
     return itemsToUnfavorite
 end
 
-local function SetItemFavoriteState(itemUUID: string, isFavorite: boolean): boolean
-    if not RE_FavoriteItem then return false end
-    pcall(function() RE_FavoriteItem:FireServer(itemUUID) end)
-    return true
+local function SetItemFavoriteState(itemUUID: string): boolean
+    if not RE_FavoriteItem then 
+        return false 
+    end
+    
+    local success = pcall(function() 
+        RE_FavoriteItem:FireServer(itemUUID) 
+    end)
+    
+    return success
 end
 
 local function RunAutoFavoriteLoop(): ()
@@ -471,7 +495,7 @@ local function RunAutoFavoriteLoop(): ()
                 })
                 
                 for _, itemUUID in ipairs(itemsToFavorite) do
-                    SetItemFavoriteState(itemUUID, true)
+                    SetItemFavoriteState(itemUUID)
                     task.wait(actionDelay)
                 end
             end
@@ -500,7 +524,7 @@ local function RunAutoUnfavoriteLoop(): ()
                 })
                 
                 for _, itemUUID in ipairs(itemsToUnfavorite) do
-                    SetItemFavoriteState(itemUUID, false)
+                    SetItemFavoriteState(itemUUID)
                     task.wait(actionDelay)
                 end
             end
@@ -1000,17 +1024,50 @@ local favsec = automatic:Section({
     TextSize = 20 
 })
 
--- INFO PARAGRAPH
 favsec:Paragraph({
-    Title = "ℹ️ Info",
-    Content = "Auto Favorite akan berjalan dengan fallback method jika ItemUtility tidak ditemukan. Filter tetap berfungsi!",
+    Title = "⚠️ Utilities Status",
+    Content = UtilitiesLoaded and "✅ Loaded successfully!" or "⏳ Loading... Please wait or click Retry button below",
     Icon = "info"
 })
+
+favsec:Button({
+    Title = "Retry Load Utilities",
+    Icon = "refresh-cw",
+    Desc = "Click if utilities failed to load",
+    Callback = function()
+        WindUI:Notify({
+            Title = "Retrying...",
+            Content = "Attempting to load utilities...",
+            Duration = 2,
+            Icon = "loader"
+        })
+        
+        task.spawn(function()
+            if LoadUtilitiesWithRetry() then
+                WindUI:Notify({
+                    Title = "Success!",
+                    Content = "Utilities loaded successfully!",
+                    Duration = 3,
+                    Icon = "check"
+                })
+            else
+                WindUI:Notify({
+                    Title = "Failed",
+                    Content = "Could not load utilities. Feature may not work properly.",
+                    Duration = 5,
+                    Icon = "x"
+                })
+            end
+        end)
+    end
+})
+
+automatic:Divider()
 
 -- 1. DROPDOWN FILTER BY RARITY (Multi-Select)
 local RarityDropdown = favsec:Dropdown({
     Title = "Filter by Rarity",
-    Values = {"Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "SECRET"},
+    Values = {"COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY", "MYTHIC", "SECRET"},
     Multi = true, 
     AllowNone = true, 
     Value = false,
@@ -1035,13 +1092,8 @@ local ItemNameDropdown = favsec:Dropdown({
 
 -- 3. DROPDOWN FILTER BY MUTATION (Multi-Select)
 local MutationDropdown = favsec:Dropdown({
-    Title = "Filter by Mutation",
-    Values = {
-        "Shiny", "Gemstone", "Corrupt", "Galaxy", "Holographic", 
-        "Ghost", "Lightning", "Fairy Dust", "Gold", "Midnight", 
-        "Radioactive", "Stone", "Albino", "Sandy", "Acidic", 
-        "Disco", "Frozen", "Noob"
-    },
+    Title = "Filter by Mutation/Variant",
+    Values = {"Shiny", "VariantId"},
     Multi = true, 
     AllowNone = true, 
     Value = false,
@@ -1052,30 +1104,6 @@ local MutationDropdown = favsec:Dropdown({
 
 automatic:Divider()
 
--- BUTTON TO RETRY LOADING UTILITIES
-favsec:Button({
-    Title = "Retry Load Utilities",
-    Icon = "refresh-cw",
-    Desc = "Click if utilities failed to load",
-    Callback = function()
-        if LoadUtilities() then
-            WindUI:Notify({
-                Title = "Success!",
-                Content = "Utilities loaded successfully!",
-                Duration = 3,
-                Icon = "check"
-            })
-        else
-            WindUI:Notify({
-                Title = "Still Failed",
-                Content = "Using fallback method instead",
-                Duration = 3,
-                Icon = "alert-triangle"
-            })
-        end
-    end
-})
-
 -- 4. TOGGLE AUTO FAVORITE
 local togglefav = favsec:Toggle({
     Title = "Enable Auto Favorite",
@@ -1085,7 +1113,6 @@ local togglefav = favsec:Toggle({
         autoFavoriteState = state
         
         if state then
-            -- Disable Unfavorite if Favorite is ON
             if autoUnfavoriteState then
                 autoUnfavoriteState = false
                 if autoUnfavoriteThread then 
@@ -1094,7 +1121,6 @@ local togglefav = favsec:Toggle({
                 end
             end
 
-            -- Check if Replion is available
             if not GetPlayerDataReplion() then 
                 WindUI:Notify({ 
                     Title = "Error", 
@@ -1105,14 +1131,14 @@ local togglefav = favsec:Toggle({
                 return false 
             end
             
-            -- Show warning if utilities not loaded
             if not UtilitiesLoaded then
                 WindUI:Notify({ 
                     Title = "Warning", 
-                    Content = "Using fallback method (utilities not loaded)", 
-                    Duration = 3, 
+                    Content = "Utilities not loaded. Click Retry button first!", 
+                    Duration = 5, 
                     Icon = "alert-triangle" 
                 })
+                return false
             end
             
             WindUI:Notify({ 
@@ -1146,7 +1172,6 @@ local toggleunfav = favsec:Toggle({
         autoUnfavoriteState = state
         
         if state then
-            -- Disable Favorite if Unfavorite is ON
             if autoFavoriteState then
                 autoFavoriteState = false
                 if autoFavoriteThread then 
@@ -1155,7 +1180,6 @@ local toggleunfav = favsec:Toggle({
                 end
             end
             
-            -- Validate filter not empty
             if #selectedRarities == 0 and #selectedItemNames == 0 and #selectedMutations == 0 then
                 WindUI:Notify({ 
                     Title = "Warning!", 
@@ -1166,7 +1190,6 @@ local toggleunfav = favsec:Toggle({
                 return false
             end
 
-            -- Check if Replion is available
             if not GetPlayerDataReplion() then 
                 WindUI:Notify({ 
                     Title = "Error", 
@@ -1177,14 +1200,14 @@ local toggleunfav = favsec:Toggle({
                 return false 
             end
 
-            -- Show warning if utilities not loaded
             if not UtilitiesLoaded then
                 WindUI:Notify({ 
                     Title = "Warning", 
-                    Content = "Using fallback method (utilities not loaded)", 
-                    Duration = 3, 
+                    Content = "Utilities not loaded. Click Retry button first!", 
+                    Duration = 5, 
                     Icon = "alert-triangle" 
                 })
+                return false
             end
 
             WindUI:Notify({ 
@@ -1331,14 +1354,14 @@ totem:Button({
 -- FINALIZATION
 -- =====================================================
 Window:Tag({
-    Title = "Enhanced V1.4",
+    Title = "Delta V1.5",
     Color = Color3.fromHex("#F5C527"),
     Radius = 9,
 })
 
 WindUI:Notify({
-    Title = "Plenger Hub Enhanced V1.4",
-    Content = "Auto Favorite with fallback ready!",
+    Title = "Plenger Hub Delta V1.5",
+    Content = "Auto Favorite ready for Delta!",
     Duration = 5,
     Icon = "info"
 })
