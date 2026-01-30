@@ -1,6 +1,6 @@
 --!strict
 -- Plenger Hub Premium - Blatant Fishing & Auto Totem + Auto Favorite
--- Fixed: Timer Persistent + Spawn at New Position
+-- Fixed: Timer Persistent + Spawn at New Position + ItemUtility Fix
 
 local WindUI
 
@@ -72,14 +72,45 @@ local RE_UnequipItem = GetRemote(RPath, "RE/UnequipItem") :: RemoteEvent?
 local RE_FavoriteItem = GetRemote(RPath, "RE/FavoriteItem") :: RemoteEvent?
 
 -- =====================================================
--- UTILITY MODULES
+-- UTILITY MODULES (WITH BETTER LOADING)
 -- =====================================================
 local ItemUtility = nil
 local TierUtility = nil
+local UtilitiesLoaded = false
 
-pcall(function()
-    ItemUtility = require(ReplicatedStorage.Utilities.ItemUtility)
-    TierUtility = require(ReplicatedStorage.Utilities.TierUtility)
+-- Function to load utilities with retries
+local function LoadUtilities(): boolean
+    if UtilitiesLoaded then return true end
+    
+    local success = pcall(function()
+        local UtilitiesFolder = ReplicatedStorage:WaitForChild("Utilities", 10)
+        if not UtilitiesFolder then
+            error("Utilities folder not found")
+        end
+        
+        local ItemUtilityModule = UtilitiesFolder:WaitForChild("ItemUtility", 5)
+        local TierUtilityModule = UtilitiesFolder:WaitForChild("TierUtility", 5)
+        
+        if ItemUtilityModule and TierUtilityModule then
+            ItemUtility = require(ItemUtilityModule)
+            TierUtility = require(TierUtilityModule)
+            UtilitiesLoaded = true
+            print("[Plenger Hub] Utilities loaded successfully!")
+        end
+    end)
+    
+    return success and UtilitiesLoaded
+end
+
+-- Try loading utilities immediately
+task.spawn(function()
+    task.wait(2) -- Wait for game to fully load
+    for i = 1, 5 do
+        if LoadUtilities() then
+            break
+        end
+        task.wait(1)
+    end
 end)
 
 -- =====================================================
@@ -187,12 +218,21 @@ local Window = WindUI:CreateWindow({
 -- AUTO FAVORITE/UNFAVORITE HELPER FUNCTIONS
 -- =====================================================
 local function GetPlayerDataReplion()
-    local ReplionModule = ReplicatedStorage:WaitForChild("Packages"):WaitForChild("Replion", 10)
-    if not ReplionModule then 
-        return nil 
+    local success, result = pcall(function()
+        local ReplionModule = ReplicatedStorage:WaitForChild("Packages", 10)
+        if not ReplionModule then return nil end
+        
+        ReplionModule = ReplionModule:WaitForChild("Replion", 10)
+        if not ReplionModule then return nil end
+        
+        local ReplionClient = require(ReplionModule).Client
+        return ReplionClient:WaitReplion("Data", 10)
+    end)
+    
+    if success then
+        return result
     end
-    local ReplionClient = require(ReplionModule).Client
-    return ReplionClient:WaitReplion("Data", 5)
+    return nil
 end
 
 local function getAutoFavoriteItemOptions(): {string}
@@ -224,19 +264,56 @@ local function getAutoFavoriteItemOptions(): {string}
     return itemNames
 end
 
+-- Fallback method jika ItemUtility tidak tersedia
 local function GetFishNameAndRarity(item: any): (string, string)
-    if not ItemUtility or not TierUtility then
-        return "Unknown", "Common"
+    -- Method 1: Use ItemUtility if available
+    if ItemUtility and TierUtility then
+        local success, itemName, rarity = pcall(function()
+            local name = ItemUtility:GetItemName(item)
+            local tier = ItemUtility:GetItemTier(item)
+            local rarityName = TierUtility:GetTierName(tier)
+            return name, rarityName
+        end)
+        
+        if success then
+            return itemName, rarity
+        end
     end
     
+    -- Method 2: Direct item properties (fallback)
     local itemName = "Unknown"
     local rarity = "Common"
     
-    pcall(function()
-        itemName = ItemUtility:GetItemName(item)
-        local tier = ItemUtility:GetItemTier(item)
-        rarity = TierUtility:GetTierName(tier)
-    end)
+    if item.Name then
+        itemName = tostring(item.Name)
+    elseif item.ItemName then
+        itemName = tostring(item.ItemName)
+    elseif item.Id then
+        -- Try to get name from ReplicatedStorage Items
+        local itemsFolder = ReplicatedStorage:FindFirstChild("Items")
+        if itemsFolder then
+            local itemData = itemsFolder:FindFirstChild(tostring(item.Id))
+            if itemData then
+                itemName = itemData.Name
+            end
+        end
+    end
+    
+    -- Try to get rarity
+    if item.Rarity then
+        rarity = tostring(item.Rarity)
+    elseif item.Tier then
+        local tierNames = {
+            [1] = "Common",
+            [2] = "Uncommon", 
+            [3] = "Rare",
+            [4] = "Epic",
+            [5] = "Legendary",
+            [6] = "Mythic",
+            [7] = "SECRET"
+        }
+        rarity = tierNames[tonumber(item.Tier)] or "Common"
+    end
     
     return itemName, rarity
 end
@@ -261,10 +338,19 @@ end
 
 local function GetItemsToFavorite(): {string}
     local replion = GetPlayerDataReplion()
-    if not replion or not ItemUtility or not TierUtility then return {} end
+    if not replion then 
+        print("[Plenger Hub] Failed to get Replion data")
+        return {} 
+    end
 
-    local success, inventoryData = pcall(function() return replion:GetExpect("Inventory") end)
-    if not success or not inventoryData or not inventoryData.Items then return {} end
+    local success, inventoryData = pcall(function() 
+        return replion:GetExpect("Inventory") 
+    end)
+    
+    if not success or not inventoryData or not inventoryData.Items then 
+        print("[Plenger Hub] Failed to get inventory data")
+        return {} 
+    end
 
     local itemsToFavorite: {string} = {}
     
@@ -314,9 +400,12 @@ end
 
 local function GetItemsToUnfavorite(): {string}
     local replion = GetPlayerDataReplion()
-    if not replion or not ItemUtility or not TierUtility then return {} end
+    if not replion then return {} end
 
-    local success, inventoryData = pcall(function() return replion:GetExpect("Inventory") end)
+    local success, inventoryData = pcall(function() 
+        return replion:GetExpect("Inventory") 
+    end)
+    
     if not success or not inventoryData or not inventoryData.Items then return {} end
 
     local itemsToUnfavorite: {string} = {}
@@ -367,7 +456,7 @@ local function RunAutoFavoriteLoop(): ()
     if autoFavoriteThread then task.cancel(autoFavoriteThread) end
     
     autoFavoriteThread = task.spawn(function()
-        local waitTime = 1
+        local waitTime = 2
         local actionDelay = 0.5
         
         while autoFavoriteState do
@@ -377,7 +466,7 @@ local function RunAutoFavoriteLoop(): ()
                 WindUI:Notify({ 
                     Title = "Auto Favorite", 
                     Content = string.format("Favoriting %d items...", #itemsToFavorite), 
-                    Duration = 1, 
+                    Duration = 2, 
                     Icon = "star" 
                 })
                 
@@ -396,7 +485,7 @@ local function RunAutoUnfavoriteLoop(): ()
     if autoUnfavoriteThread then task.cancel(autoUnfavoriteThread) end
     
     autoUnfavoriteThread = task.spawn(function()
-        local waitTime = 1
+        local waitTime = 2
         local actionDelay = 0.5
         
         while autoUnfavoriteState do
@@ -406,7 +495,7 @@ local function RunAutoUnfavoriteLoop(): ()
                 WindUI:Notify({ 
                     Title = "Auto Unfavorite", 
                     Content = string.format("Unfavoriting %d items...", #itemsToUnfavorite), 
-                    Duration = 1, 
+                    Duration = 2, 
                     Icon = "x" 
                 })
                 
@@ -911,6 +1000,13 @@ local favsec = automatic:Section({
     TextSize = 20 
 })
 
+-- INFO PARAGRAPH
+favsec:Paragraph({
+    Title = "ℹ️ Info",
+    Content = "Auto Favorite akan berjalan dengan fallback method jika ItemUtility tidak ditemukan. Filter tetap berfungsi!",
+    Icon = "info"
+})
+
 -- 1. DROPDOWN FILTER BY RARITY (Multi-Select)
 local RarityDropdown = favsec:Dropdown({
     Title = "Filter by Rarity",
@@ -956,6 +1052,30 @@ local MutationDropdown = favsec:Dropdown({
 
 automatic:Divider()
 
+-- BUTTON TO RETRY LOADING UTILITIES
+favsec:Button({
+    Title = "Retry Load Utilities",
+    Icon = "refresh-cw",
+    Desc = "Click if utilities failed to load",
+    Callback = function()
+        if LoadUtilities() then
+            WindUI:Notify({
+                Title = "Success!",
+                Content = "Utilities loaded successfully!",
+                Duration = 3,
+                Icon = "check"
+            })
+        else
+            WindUI:Notify({
+                Title = "Still Failed",
+                Content = "Using fallback method instead",
+                Duration = 3,
+                Icon = "alert-triangle"
+            })
+        end
+    end
+})
+
 -- 4. TOGGLE AUTO FAVORITE
 local togglefav = favsec:Toggle({
     Title = "Enable Auto Favorite",
@@ -974,15 +1094,25 @@ local togglefav = favsec:Toggle({
                 end
             end
 
-            -- Validate dependencies
-            if not GetPlayerDataReplion() or not ItemUtility or not TierUtility then 
+            -- Check if Replion is available
+            if not GetPlayerDataReplion() then 
                 WindUI:Notify({ 
                     Title = "Error", 
-                    Content = "Failed to load ItemUtility/TierUtility/Replion.", 
+                    Content = "Failed to load Replion data. Wait and try again.", 
                     Duration = 3, 
                     Icon = "x" 
                 })
                 return false 
+            end
+            
+            -- Show warning if utilities not loaded
+            if not UtilitiesLoaded then
+                WindUI:Notify({ 
+                    Title = "Warning", 
+                    Content = "Using fallback method (utilities not loaded)", 
+                    Duration = 3, 
+                    Icon = "alert-triangle" 
+                })
             end
             
             WindUI:Notify({ 
@@ -1034,6 +1164,27 @@ local toggleunfav = favsec:Toggle({
                     Icon = "alert-triangle" 
                 })
                 return false
+            end
+
+            -- Check if Replion is available
+            if not GetPlayerDataReplion() then 
+                WindUI:Notify({ 
+                    Title = "Error", 
+                    Content = "Failed to load Replion data. Wait and try again.", 
+                    Duration = 3, 
+                    Icon = "x" 
+                })
+                return false 
+            end
+
+            -- Show warning if utilities not loaded
+            if not UtilitiesLoaded then
+                WindUI:Notify({ 
+                    Title = "Warning", 
+                    Content = "Using fallback method (utilities not loaded)", 
+                    Duration = 3, 
+                    Icon = "alert-triangle" 
+                })
             end
 
             WindUI:Notify({ 
@@ -1187,7 +1338,7 @@ Window:Tag({
 
 WindUI:Notify({
     Title = "Plenger Hub Enhanced V1.4",
-    Content = "Auto Favorite/Unfavorite ready!",
+    Content = "Auto Favorite with fallback ready!",
     Duration = 5,
     Icon = "info"
 })
