@@ -1,6 +1,6 @@
 --!strict
 -- Plenger Hub Premium - Blatant Fishing & Auto Totem Only
--- Fixed: Timer Persistent + Spawn at New Position
+-- Enhanced with Profile System, Theme Toggle, Stats Display & Auto Sell
 
 local WindUI
 
@@ -30,6 +30,7 @@ type CFrame = CFrame
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
 
 local LocalPlayer: Player = Players.LocalPlayer
 local RPath: {string} = {"Packages", "_Index", "sleitnick_net@0.2.0", "net"}
@@ -69,6 +70,36 @@ local RF_UpdateAutoFishingState = GetRemote(RPath, "RF/UpdateAutoFishingState") 
 local RE_SpawnTotem = GetRemote(RPath, "RE/SpawnTotem") :: RemoteEvent?
 local RE_EquipItem = GetRemote(RPath, "RE/EquipItem") :: RemoteEvent?
 local RE_UnequipItem = GetRemote(RPath, "RE/UnequipItem") :: RemoteEvent?
+local RE_SellAllFish = GetRemote(RPath, "RE/SellAllFish") :: RemoteEvent?
+local RE_FavoriteFish = GetRemote(RPath, "RE/FavoriteFish") :: RemoteEvent?
+
+-- =====================================================
+-- STATS TRACKING
+-- =====================================================
+local FishingStats = {
+    TotalCatches = 0,
+    ShinyCount = 0,
+    MutationCount = 0,
+    SessionStart = os.time(),
+    MoneyEarned = 0,
+    LastSellTime = 0,
+}
+
+-- =====================================================
+-- AUTO SELL VARIABLES
+-- =====================================================
+local AUTO_SELL_ACTIVE: boolean = false
+local AUTO_SELL_THREAD: thread? = nil
+local AUTO_SELL_MODE: string = "Count" -- "Count" or "Delay"
+local AUTO_SELL_COUNT: number = 50
+local AUTO_SELL_DELAY: number = 300 -- seconds
+
+-- =====================================================
+-- AUTO FAVORITE VARIABLES
+-- =====================================================
+local AUTO_FAVORITE_ACTIVE: boolean = false
+local AUTO_FAVORITE_SHINY: boolean = true
+local AUTO_FAVORITE_MUTATION: boolean = true
 
 -- =====================================================
 -- BLATANT FISHING VARIABLES
@@ -102,6 +133,92 @@ local TOTEM_NAMES: {string} = {"Luck Totem", "Mutation Totem", "Shiny Totem"}
 
 -- UI Status Paragraph
 local TOTEM_STATUS_PARAGRAPH: any = nil
+local STATS_PARAGRAPH: any = nil
+local AUTOSELL_STATUS_PARAGRAPH: any = nil
+
+-- =====================================================
+-- PROFILE SYSTEM
+-- =====================================================
+local ProfileData = {
+    Current = "Default",
+    Profiles = {
+        Default = {
+            BlatantInterval = 1.715,
+            CompleteDelay = 3.055,
+            CancelDelay = 0.3,
+            TotemType = "Luck Totem",
+            AutoSellMode = "Count",
+            AutoSellCount = 50,
+            AutoSellDelay = 300,
+            AutoFavoriteShiny = true,
+            AutoFavoriteMutation = true,
+        }
+    }
+}
+
+local function SaveProfile(profileName: string): ()
+    ProfileData.Profiles[profileName] = {
+        BlatantInterval = loopInterval,
+        CompleteDelay = completeDelay,
+        CancelDelay = cancelDelay,
+        TotemType = selectedTotemName,
+        AutoSellMode = AUTO_SELL_MODE,
+        AutoSellCount = AUTO_SELL_COUNT,
+        AutoSellDelay = AUTO_SELL_DELAY,
+        AutoFavoriteShiny = AUTO_FAVORITE_SHINY,
+        AutoFavoriteMutation = AUTO_FAVORITE_MUTATION,
+    }
+    
+    if writefile then
+        local success = pcall(function()
+            writefile("PlengerHub_Profiles.json", HttpService:JSONEncode(ProfileData))
+        end)
+        if success then
+            WindUI:Notify({
+                Title = "Profile Saved",
+                Content = "Profile '" .. profileName .. "' has been saved!",
+                Duration = 3,
+                Icon = "save"
+            })
+        end
+    end
+end
+
+local function LoadProfile(profileName: string): ()
+    if ProfileData.Profiles[profileName] then
+        local profile = ProfileData.Profiles[profileName]
+        
+        loopInterval = profile.BlatantInterval or 1.715
+        completeDelay = profile.CompleteDelay or 3.055
+        cancelDelay = profile.CancelDelay or 0.3
+        selectedTotemName = profile.TotemType or "Luck Totem"
+        AUTO_SELL_MODE = profile.AutoSellMode or "Count"
+        AUTO_SELL_COUNT = profile.AutoSellCount or 50
+        AUTO_SELL_DELAY = profile.AutoSellDelay or 300
+        AUTO_FAVORITE_SHINY = profile.AutoFavoriteShiny ~= false
+        AUTO_FAVORITE_MUTATION = profile.AutoFavoriteMutation ~= false
+        
+        ProfileData.Current = profileName
+        
+        WindUI:Notify({
+            Title = "Profile Loaded",
+            Content = "Profile '" .. profileName .. "' loaded successfully!",
+            Duration = 3,
+            Icon = "check"
+        })
+    end
+end
+
+local function InitializeProfiles(): ()
+    if readfile and isfile and isfile("PlengerHub_Profiles.json") then
+        local success, data = pcall(function()
+            return HttpService:JSONDecode(readfile("PlengerHub_Profiles.json"))
+        end)
+        if success and data then
+            ProfileData = data
+        end
+    end
+end
 
 -- =====================================================
 -- ANTI-AFK
@@ -127,7 +244,7 @@ local Window = WindUI:CreateWindow({
     Transparent = true,
     IconSize = 24,
     NewElements = true,
-    Size = UDim2.fromOffset(600, 360),
+    Size = UDim2.fromOffset(600, 380),
     MinSize = Vector2.new(560, 250),
     MaxSize = Vector2.new(950, 760),
     ToggleKey = Enum.KeyCode.G,
@@ -136,6 +253,7 @@ local Window = WindUI:CreateWindow({
     BackgroundImageTransparency = 0.42,
     HideSearchBar = true,
     ScrollBarEnabled = true,
+    Theme = "Rose",
     User = {
         Enabled = true,
         Anonymous = false,
@@ -158,6 +276,178 @@ local Window = WindUI:CreateWindow({
         ButtonsType = "Default",
     },
 })
+
+-- =====================================================
+-- STATS DISPLAY FUNCTIONS
+-- =====================================================
+local function UpdateStatsDisplay(): ()
+    if not STATS_PARAGRAPH then return end
+    
+    local sessionTime = os.time() - FishingStats.SessionStart
+    local hours = math.floor(sessionTime / 3600)
+    local minutes = math.floor((sessionTime % 3600) / 60)
+    local seconds = sessionTime % 60
+    
+    local statsText = string.format(
+        "🎣 Total Catches: %d\n✨ Shiny: %d | 🧬 Mutation: %d\n⏱️ Session: %02d:%02d:%02d\n💰 Money Earned: ~%d",
+        FishingStats.TotalCatches,
+        FishingStats.ShinyCount,
+        FishingStats.MutationCount,
+        hours, minutes, seconds,
+        FishingStats.MoneyEarned
+    )
+    
+    STATS_PARAGRAPH:SetDesc(statsText)
+end
+
+local function UpdateAutoSellStatus(): ()
+    if not AUTOSELL_STATUS_PARAGRAPH then return end
+    
+    if AUTO_SELL_ACTIVE then
+        if AUTO_SELL_MODE == "Count" then
+            AUTOSELL_STATUS_PARAGRAPH:SetTitle("🔄 Auto Sell: Active (Count)")
+            AUTOSELL_STATUS_PARAGRAPH:SetDesc(string.format(
+                "Mode: Sell every %d catches\nCurrent catches: %d/%d",
+                AUTO_SELL_COUNT,
+                FishingStats.TotalCatches % AUTO_SELL_COUNT,
+                AUTO_SELL_COUNT
+            ))
+        else
+            local timeSinceLastSell = os.time() - FishingStats.LastSellTime
+            local timeUntilSell = AUTO_SELL_DELAY - timeSinceLastSell
+            
+            if timeUntilSell < 0 then timeUntilSell = 0 end
+            
+            local mins = math.floor(timeUntilSell / 60)
+            local secs = timeUntilSell % 60
+            
+            AUTOSELL_STATUS_PARAGRAPH:SetTitle("🔄 Auto Sell: Active (Timer)")
+            AUTOSELL_STATUS_PARAGRAPH:SetDesc(string.format(
+                "Mode: Sell every %d seconds\nNext sell in: %02d:%02d",
+                AUTO_SELL_DELAY,
+                mins, secs
+            ))
+        end
+    else
+        AUTOSELL_STATUS_PARAGRAPH:SetTitle("💤 Auto Sell: Disabled")
+        AUTOSELL_STATUS_PARAGRAPH:SetDesc("Enable toggle to start auto selling fish")
+    end
+end
+
+-- =====================================================
+-- AUTO SELL LOGIC
+-- =====================================================
+local function SellAllFish(): ()
+    pcall(function()
+        if RE_SellAllFish then
+            RE_SellAllFish:FireServer()
+            FishingStats.LastSellTime = os.time()
+            
+            WindUI:Notify({
+                Title = "Fish Sold!",
+                Content = "All fish have been sold",
+                Duration = 2,
+                Icon = "dollar-sign"
+            })
+        end
+    end)
+end
+
+local function RunAutoSellLoop(): ()
+    if AUTO_SELL_THREAD then
+        task.cancel(AUTO_SELL_THREAD)
+    end
+    
+    AUTO_SELL_THREAD = task.spawn(function()
+        FishingStats.LastSellTime = os.time()
+        
+        while AUTO_SELL_ACTIVE do
+            if AUTO_SELL_MODE == "Count" then
+                -- Mode: Sell berdasarkan jumlah catch
+                if FishingStats.TotalCatches > 0 and FishingStats.TotalCatches % AUTO_SELL_COUNT == 0 then
+                    SellAllFish()
+                    task.wait(5) -- Cooldown setelah sell
+                end
+                task.wait(1)
+            else
+                -- Mode: Sell berdasarkan delay/timer
+                local timeSinceLastSell = os.time() - FishingStats.LastSellTime
+                
+                if timeSinceLastSell >= AUTO_SELL_DELAY then
+                    SellAllFish()
+                end
+                
+                task.wait(1)
+            end
+            
+            UpdateAutoSellStatus()
+        end
+    end)
+end
+
+-- =====================================================
+-- AUTO FAVORITE LOGIC
+-- =====================================================
+local function GetPlayerDataReplion()
+    local ReplionModule = ReplicatedStorage:WaitForChild("Packages"):WaitForChild("Replion", 10)
+    if not ReplionModule then 
+        return nil 
+    end
+    local ReplionClient = require(ReplionModule).Client
+    return ReplionClient:WaitReplion("Data", 5)
+end
+
+local function CheckAndFavoriteFish(): ()
+    if not AUTO_FAVORITE_ACTIVE then return end
+    
+    task.spawn(function()
+        local replion = GetPlayerDataReplion()
+        if not replion then return end
+        
+        local success, inventoryData = pcall(function()
+            return replion:GetExpect("Inventory")
+        end)
+        
+        if success and inventoryData.Fish then
+            for _, fish in ipairs(inventoryData.Fish) do
+                local shouldFavorite = false
+                
+                -- Check for Shiny
+                if AUTO_FAVORITE_SHINY and fish.Shiny then
+                    shouldFavorite = true
+                    FishingStats.ShinyCount = FishingStats.ShinyCount + 1
+                end
+                
+                -- Check for Mutation
+                if AUTO_FAVORITE_MUTATION and fish.Mutation then
+                    shouldFavorite = true
+                    FishingStats.MutationCount = FishingStats.MutationCount + 1
+                end
+                
+                -- Favorite the fish if needed and not already favorited
+                if shouldFavorite and not fish.Favorited and fish.UUID then
+                    pcall(function()
+                        if RE_FavoriteFish then
+                            RE_FavoriteFish:FireServer(fish.UUID, true)
+                            
+                            local fishType = ""
+                            if fish.Shiny then fishType = fishType .. "✨Shiny " end
+                            if fish.Mutation then fishType = fishType .. "🧬Mutation " end
+                            
+                            WindUI:Notify({
+                                Title = "Auto Favorited!",
+                                Content = fishType .. (fish.Name or "Fish"),
+                                Duration = 3,
+                                Icon = "star"
+                            })
+                        end
+                    end)
+                    task.wait(0.1)
+                end
+            end
+        end
+    end)
+end
 
 -- =====================================================
 -- BLATANT FISHING LOGIC
@@ -307,7 +597,16 @@ local function runBlatantInstant(): ()
         
         pcall(function() 
             if RE_FishingCompleted then
-                RE_FishingCompleted:FireServer() 
+                RE_FishingCompleted:FireServer()
+                
+                -- Track stats
+                FishingStats.TotalCatches = FishingStats.TotalCatches + 1
+                
+                -- Check for auto favorite
+                task.delay(0.5, CheckAndFavoriteFish)
+                
+                -- Update stats display
+                UpdateStatsDisplay()
             end
         end)
         task.wait(cancelDelay)
@@ -323,15 +622,6 @@ end
 -- =====================================================
 -- TOTEM LOGIC (PERSISTENT TIMER + AUTO DETECT NEW POSITION)
 -- =====================================================
-local function GetPlayerDataReplion()
-    local ReplionModule = ReplicatedStorage:WaitForChild("Packages"):WaitForChild("Replion", 10)
-    if not ReplionModule then 
-        return nil 
-    end
-    local ReplionClient = require(ReplionModule).Client
-    return ReplionClient:WaitReplion("Data", 5)
-end
-
 local function GetTotemUUID(name: string): string?
     local replion = GetPlayerDataReplion()
     if not replion then 
@@ -520,6 +810,55 @@ local function RunAutoTotemLoop(): ()
 end
 
 -- =====================================================
+-- STATS UPDATE LOOP
+-- =====================================================
+task.spawn(function()
+    while task.wait(1) do
+        UpdateStatsDisplay()
+    end
+end)
+
+-- =====================================================
+-- UI CREATION - HOME TAB
+-- =====================================================
+local home = Window:Tab({
+    Title = "Home",
+    Icon = "home",
+    Locked = false,
+})
+
+local statsSection = home:Section({
+    Title = "Session Statistics",
+    TextSize = 20,
+})
+
+STATS_PARAGRAPH = statsSection:Paragraph({
+    Title = "📊 Fishing Stats",
+    Content = "Waiting for data...",
+    Icon = "bar-chart-2"
+})
+
+statsSection:Button({
+    Title = "Reset Statistics",
+    Icon = "refresh-cw",
+    Desc = "Reset all session stats to 0",
+    Callback = function()
+        FishingStats.TotalCatches = 0
+        FishingStats.ShinyCount = 0
+        FishingStats.MutationCount = 0
+        FishingStats.SessionStart = os.time()
+        FishingStats.MoneyEarned = 0
+        
+        WindUI:Notify({
+            Title = "Stats Reset",
+            Content = "All statistics have been reset",
+            Duration = 2,
+            Icon = "check"
+        })
+    end
+})
+
+-- =====================================================
 -- UI CREATION - FISHING TAB
 -- =====================================================
 local farm = Window:Tab({
@@ -642,6 +981,160 @@ local togblat = blatant:Toggle({
     end
 })
 
+-- AUTO SELL SECTION
+farm:Divider()
+
+local autoSellSection = farm:Section({
+    Title = "Auto Sell Fish",
+    TextSize = 20,
+})
+
+AUTOSELL_STATUS_PARAGRAPH = autoSellSection:Paragraph({
+    Title = "💤 Auto Sell: Disabled",
+    Content = "Enable toggle to start auto selling fish",
+    Icon = "dollar-sign"
+})
+
+local sellModeDropdown = autoSellSection:Dropdown({
+    Title = "Sell Mode",
+    Values = {"Count", "Delay"},
+    Value = AUTO_SELL_MODE,
+    Multi = false,
+    Callback = function(mode: string)
+        AUTO_SELL_MODE = mode
+        UpdateAutoSellStatus()
+        
+        WindUI:Notify({
+            Title = "Mode Changed",
+            Content = "Auto Sell mode set to: " .. mode,
+            Duration = 2,
+            Icon = "info"
+        })
+    end
+})
+
+local sellCountInput = autoSellSection:Input({
+    Title = "Sell Count",
+    Value = tostring(AUTO_SELL_COUNT),
+    Icon = "hash",
+    Type = "Input",
+    Placeholder = "50",
+    Callback = function(input: string)
+        local newCount: number? = tonumber(input)
+        if newCount and newCount >= 1 then 
+            AUTO_SELL_COUNT = newCount
+        end
+    end
+})
+
+local sellDelayInput = autoSellSection:Input({
+    Title = "Sell Delay (seconds)",
+    Value = tostring(AUTO_SELL_DELAY),
+    Icon = "clock",
+    Type = "Input",
+    Placeholder = "300",
+    Callback = function(input: string)
+        local newDelay: number? = tonumber(input)
+        if newDelay and newDelay >= 30 then 
+            AUTO_SELL_DELAY = newDelay
+        end
+    end
+})
+
+local toggleAutoSell = autoSellSection:Toggle({
+    Title = "Enable Auto Sell",
+    Desc = "Automatically sell fish based on selected mode",
+    Value = false,
+    Callback = function(state: boolean)
+        AUTO_SELL_ACTIVE = state
+        
+        if state then
+            RunAutoSellLoop()
+            WindUI:Notify({
+                Title = "Auto Sell Started",
+                Content = "Mode: " .. AUTO_SELL_MODE,
+                Duration = 3,
+                Icon = "play"
+            })
+        else
+            if AUTO_SELL_THREAD then
+                task.cancel(AUTO_SELL_THREAD)
+                AUTO_SELL_THREAD = nil
+            end
+            
+            UpdateAutoSellStatus()
+            
+            WindUI:Notify({
+                Title = "Auto Sell Stopped",
+                Duration = 2,
+                Icon = "square"
+            })
+        end
+    end
+})
+
+autoSellSection:Button({
+    Title = "Sell All Fish Now",
+    Icon = "zap",
+    Desc = "Instantly sell all fish in inventory",
+    Callback = function()
+        SellAllFish()
+    end
+})
+
+-- AUTO FAVORITE SECTION
+farm:Divider()
+
+local autoFavSection = farm:Section({
+    Title = "Auto Favorite",
+    TextSize = 20,
+})
+
+local favShinyToggle = autoFavSection:Toggle({
+    Title = "Auto Favorite Shiny",
+    Desc = "Automatically favorite shiny fish",
+    Value = AUTO_FAVORITE_SHINY,
+    Callback = function(state: boolean)
+        AUTO_FAVORITE_SHINY = state
+        
+        WindUI:Notify({
+            Title = state and "Shiny Favorite ON" or "Shiny Favorite OFF",
+            Duration = 2,
+            Icon = "star"
+        })
+    end
+})
+
+local favMutationToggle = autoFavSection:Toggle({
+    Title = "Auto Favorite Mutation",
+    Desc = "Automatically favorite mutation fish",
+    Value = AUTO_FAVORITE_MUTATION,
+    Callback = function(state: boolean)
+        AUTO_FAVORITE_MUTATION = state
+        
+        WindUI:Notify({
+            Title = state and "Mutation Favorite ON" or "Mutation Favorite OFF",
+            Duration = 2,
+            Icon = "star"
+        })
+    end
+})
+
+local toggleAutoFav = autoFavSection:Toggle({
+    Title = "Enable Auto Favorite",
+    Desc = "Enable auto favorite system",
+    Value = false,
+    Callback = function(state: boolean)
+        AUTO_FAVORITE_ACTIVE = state
+        
+        WindUI:Notify({
+            Title = state and "Auto Favorite Started" or "Auto Favorite Stopped",
+            Duration = 2,
+            Icon = state and "play" or "square"
+        })
+    end
+})
+
 -- =====================================================
 -- UI CREATION - PREMIUM TAB
 -- =====================================================
@@ -657,8 +1150,6 @@ local totem = premium:Section({
     Title = "Auto Spawn Totem",
     TextSize = 20
 })
-
-premium:Divider()
 
 TOTEM_STATUS_PARAGRAPH = totem:Paragraph({
     Title = "💤 Status: Idle",
@@ -760,17 +1251,117 @@ totem:Button({
 })
 
 -- =====================================================
+-- UI CREATION - SETTINGS TAB
+-- =====================================================
+local settings = Window:Tab({
+    Title = "Settings",
+    Icon = "settings",
+    Locked = false,
+})
+
+-- PROFILE SYSTEM SECTION
+local profileSection = settings:Section({
+    Title = "Profile System",
+    TextSize = 20,
+})
+
+InitializeProfiles()
+
+local profileNames = {"Default"}
+for name, _ in pairs(ProfileData.Profiles) do
+    if name ~= "Default" then
+        table.insert(profileNames, name)
+    end
+end
+
+local profileDropdown = profileSection:Dropdown({
+    Title = "Select Profile",
+    Values = profileNames,
+    Value = ProfileData.Current,
+    Multi = false,
+    Callback = function(name: string)
+        LoadProfile(name)
+    end
+})
+
+profileSection:Input({
+    Title = "New Profile Name",
+    Value = "",
+    Icon = "file-plus",
+    Type = "Input",
+    Placeholder = "Enter profile name...",
+    Callback = function(input: string)
+        if input and input ~= "" and not ProfileData.Profiles[input] then
+            SaveProfile(input)
+            
+            -- Update dropdown
+            table.insert(profileNames, input)
+            -- Note: WindUI dropdown doesn't have direct update method
+            -- User needs to reopen UI to see new profile
+            
+            WindUI:Notify({
+                Title = "Profile Created",
+                Content = "Profile '" .. input .. "' has been created!",
+                Duration = 3,
+                Icon = "check"
+            })
+        elseif ProfileData.Profiles[input] then
+            WindUI:Notify({
+                Title = "Error",
+                Content = "Profile already exists!",
+                Duration = 3,
+                Icon = "alert-triangle"
+            })
+        end
+    end
+})
+
+profileSection:Button({
+    Title = "Save Current Settings",
+    Icon = "save",
+    Desc = "Save current settings to selected profile",
+    Callback = function()
+        SaveProfile(ProfileData.Current)
+    end
+})
+
+-- THEME SECTION
+settings:Divider()
+
+local themeSection = settings:Section({
+    Title = "Theme Settings",
+    TextSize = 20,
+})
+
+local themeDropdown = themeSection:Dropdown({
+    Title = "Select Theme",
+    Values = {"Rose", "Dark", "Light", "Mocha", "Aqua"},
+    Value = "Rose",
+    Multi = false,
+    Callback = function(theme: string)
+        Window:ChangeTheme(theme)
+        
+        WindUI:Notify({
+            Title = "Theme Changed",
+            Content = "Theme set to: " .. theme,
+            Duration = 2,
+            Icon = "palette"
+        })
+    end
+})
+
+-- =====================================================
 -- FINALIZATION
 -- =====================================================
 Window:Tag({
-    Title = "Lite V1.3",
+    Title = "Enhanced V2.0",
     Color = Color3.fromHex("#F5C527"),
     Radius = 9,
 })
 
 WindUI:Notify({
-    Title = "Plenger Hub Lite V1.3 Loaded",
-    Content = "Smart Auto Totem Ready!",
+    Title = "Plenger Hub Enhanced V2.0",
+    Content = "All features loaded successfully!",
     Duration = 5,
     Icon = "info"
 })
