@@ -1,28 +1,28 @@
 --!strict
--- Plenger Hub Premium - Optimized & Fixed
-local W
+-- Plenger Hub Premium - Balanced Optimization
+local WindUI
 
 do
-    local ok, r = pcall(function()
+    local ok, result = pcall(function()
         return require("./src/Init")
     end)
     
     if ok then
-        W = r
+        WindUI = result
     else 
-        W = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
+        WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
     end
 end
 
 -- Services
-local P = game:GetService("Players")
+local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
-local Run = game:GetService("RunService")
-local LP = P.LocalPlayer
-local RP = {"Packages", "_Index", "sleitnick_net@0.2.0", "net"}
+local RunService = game:GetService("RunService")
+local LP = Players.LocalPlayer
+local RPath = {"Packages", "_Index", "sleitnick_net@0.2.0", "net"}
 
--- Helper
-local function GR(rp, n, t)
+-- Helper Functions
+local function GetRemote(rp, n, t)
     local c = RS
     for _, cn in ipairs(rp) do
         local ch = c:WaitForChild(cn, t or 0.5)
@@ -32,61 +32,61 @@ local function GR(rp, n, t)
     return c:FindFirstChild(n)
 end
 
-local function GHRP()
+local function GetHRP()
     local C = LP.Character
     if not C then C = LP.CharacterAdded:Wait() end
     return C:WaitForChild("HumanoidRootPart", 5)
 end
 
 -- Remotes
-local R1 = GR(RP, "RE/EquipToolFromHotbar")
-local R2 = GR(RP, "RF/ChargeFishingRod")
-local R3 = GR(RP, "RF/RequestFishingMinigameStarted")
-local R4 = GR(RP, "RE/FishingCompleted")
-local R5 = GR(RP, "RF/CancelFishingInputs")
-local R6 = GR(RP, "RF/UpdateAutoFishingState")
-local R7 = GR(RP, "RE/SpawnTotem")
-local R8 = GR(RP, "RE/EquipItem")
-local R9 = GR(RP, "RE/UnequipItem")
-local R10 = GR(RP, "RE/FavoriteItem")
+local RE_Equip = GetRemote(RPath, "RE/EquipToolFromHotbar")
+local RF_Charge = GetRemote(RPath, "RF/ChargeFishingRod")
+local RF_Start = GetRemote(RPath, "RF/RequestFishingMinigameStarted")
+local RE_Complete = GetRemote(RPath, "RE/FishingCompleted")
+local RF_Cancel = GetRemote(RPath, "RF/CancelFishingInputs")
+local RF_AutoState = GetRemote(RPath, "RF/UpdateAutoFishingState")
+local RE_SpawnTotem = GetRemote(RPath, "RE/SpawnTotem")
+local RE_EquipItem = GetRemote(RPath, "RE/EquipItem")
+local RE_UnequipItem = GetRemote(RPath, "RE/UnequipItem")
+local RE_Favorite = GetRemote(RPath, "RE/FavoriteItem")
 
 -- Utilities
-local IU, TU, UL = nil, nil, false
+local ItemUtil, TierUtil, UtilsLoaded = nil, nil, false
 
-local function LU()
-    local tries = {
+local function LoadUtils()
+    local attempts = {
         function()
-            local S = RS:WaitForChild("Shared", 5)
-            if S then
-                IU = require(S:WaitForChild("ItemUtility", 3))
-                TU = require(S:WaitForChild("TierUtility", 3))
+            local Shared = RS:WaitForChild("Shared", 5)
+            if Shared then
+                ItemUtil = require(Shared:WaitForChild("ItemUtility", 3))
+                TierUtil = require(Shared:WaitForChild("TierUtility", 3))
                 return true
             end
             return false
         end,
         function()
-            for _, d in ipairs(RS:GetDescendants()) do
-                if d.Name == "ItemUtility" and d:IsA("ModuleScript") then
-                    IU = require(d)
+            for _, desc in ipairs(RS:GetDescendants()) do
+                if desc.Name == "ItemUtility" and desc:IsA("ModuleScript") then
+                    ItemUtil = require(desc)
                 end
-                if d.Name == "TierUtility" and d:IsA("ModuleScript") then
-                    TU = require(d)
+                if desc.Name == "TierUtility" and desc:IsA("ModuleScript") then
+                    TierUtil = require(desc)
                 end
-                if IU and TU then return true end
+                if ItemUtil and TierUtil then return true end
             end
             return false
         end
     }
     
-    for i, tf in ipairs(tries) do
+    for i, attempt in ipairs(attempts) do
         local ok = pcall(function()
-            if tf() then
-                UL = true
-                print("[PH] ✅ Utils loaded (Try " .. i .. ")")
+            if attempt() then
+                UtilsLoaded = true
+                print("[Plenger Hub] ✅ Utils loaded (Method " .. i .. ")")
                 return true
             end
         end)
-        if ok and UL then return true end
+        if ok and UtilsLoaded then return true end
         task.wait(0.3)
     end
     return false
@@ -94,26 +94,29 @@ end
 
 task.spawn(function()
     task.wait(1)
-    LU()
+    LoadUtils()
 end)
 
 -- Variables
-local BS, BLT, BET = false, nil, nil
-local CD, CaD, LI = 3.055, 0.3, 1.715
-_G.PH_BA = false
+local blatantState = false
+local blatantLoop, blatantEquip = nil, nil
+local completeDelay, cancelDelay, loopInterval = 3.055, 0.3, 1.715
+_G.PlengerHub_BlatantActive = false
 
-local ATA, ATT, STN = false, nil, "Luck Totem"
-local CTE, LSP = 0, nil
-local TD = {
+local autoTotemActive, autoTotemThread = false, nil
+local selectedTotem = "Luck Totem"
+local totemExpiry, lastSpawnPos = 0, nil
+local TotemData = {
     ["Luck Totem"] = {Id = 1, Duration = 3601},
     ["Mutation Totem"] = {Id = 2, Duration = 3601},
     ["Shiny Totem"] = {Id = 3, Duration = 3601}
 }
-local TN = {"Luck Totem", "Mutation Totem", "Shiny Totem"}
+local TotemNames = {"Luck Totem", "Mutation Totem", "Shiny Totem"}
 
-local AFS, AFT, AUFS, AUFT = false, nil, false, nil
-local SR, SN, SM = {}, {}, {}
-local TSP, PDR = nil, nil
+local autoFavState, autoFavThread = false, nil
+local autoUnfavState, autoUnfavThread = false, nil
+local selectedRarities, selectedNames, selectedMutations = {}, {}, {}
+local TotemStatusPara, PlayerReplion = nil, nil
 
 -- Anti-AFK
 pcall(function()
@@ -123,7 +126,7 @@ pcall(function()
 end)
 
 -- Window
-local Win = W:CreateWindow({
+local Window = WindUI:CreateWindow({
     Title = "Plenger Hub - Fish It",
     Author = "Premium",
     Folder = "PlengerHub",
@@ -156,113 +159,114 @@ local Win = W:CreateWindow({
 })
 
 -- Auto Favorite Functions
-local function GPDR()
-    if PDR then return PDR end
-    local ok, r = pcall(function()
-        local RM = RS:WaitForChild("Packages", 10):WaitForChild("Replion", 10)
-        if not RM then return nil end
-        local RC = require(RM).Client
-        return RC:WaitReplion("Data", 5)
+local function GetReplion()
+    if PlayerReplion then return PlayerReplion end
+    local ok, result = pcall(function()
+        local ReplionMod = RS:WaitForChild("Packages", 10):WaitForChild("Replion", 10)
+        if not ReplionMod then return nil end
+        local ReplionClient = require(ReplionMod).Client
+        return ReplionClient:WaitReplion("Data", 5)
     end)
-    if ok and r then
-        PDR = r
-        print("[PH] ✅ Replion OK")
+    if ok and result then
+        PlayerReplion = result
+        print("[Plenger Hub] ✅ Replion loaded")
     end
-    return PDR
+    return PlayerReplion
 end
 
-local function GFNR(itm)
-    local nm = itm.Identifier or "Unknown"
-    local rt = "COMMON"
+local function GetNameRarity(item)
+    local name = item.Identifier or "Unknown"
+    local rarity = "COMMON"
     
-    -- Priority 1: Direct metadata
-    if itm.Metadata and itm.Metadata.Rarity then
-        rt = tostring(itm.Metadata.Rarity):upper()
-        return nm, rt
+    -- Priority 1: Metadata
+    if item.Metadata and item.Metadata.Rarity then
+        rarity = tostring(item.Metadata.Rarity):upper()
+        return name, rarity
     end
     
-    -- Priority 2: ItemUtility lookup
-    if IU and itm.Id then
-        local idata = nil
+    -- Priority 2: ItemUtil
+    if ItemUtil and item.Id then
+        local itemData = nil
         pcall(function()
-            idata = IU:GetItemData(itm.Id)
-            if not idata then
-                local nid = tonumber(itm.Id) or tonumber(itm.Identifier)
-                if nid then idata = IU:GetItemData(nid) end
+            itemData = ItemUtil:GetItemData(item.Id)
+            if not itemData then
+                local numId = tonumber(item.Id) or tonumber(item.Identifier)
+                if numId then itemData = ItemUtil:GetItemData(numId) end
             end
         end)
         
-        if idata then
-            if idata.Data and idata.Data.Name then
-                nm = idata.Data.Name
+        if itemData then
+            if itemData.Data and itemData.Data.Name then
+                name = itemData.Data.Name
             end
             
-            if idata.Probability and idata.Probability.Chance and TU then
+            if itemData.Probability and itemData.Probability.Chance and TierUtil then
                 pcall(function()
-                    local to = TU:GetTierFromRarity(idata.Probability.Chance)
-                    if to and to.Name then
-                        rt = tostring(to.Name):upper()
+                    local tier = TierUtil:GetTierFromRarity(itemData.Probability.Chance)
+                    if tier and tier.Name then
+                        rarity = tostring(tier.Name):upper()
                     end
                 end)
             end
         end
     end
     
-    return nm, rt
+    return name, rarity
 end
 
-local function GIMS(itm)
-    if itm.Metadata and itm.Metadata.Shiny == true then 
+local function GetMutation(item)
+    if item.Metadata and item.Metadata.Shiny == true then 
         return "Shiny" 
     end
-    return itm.Metadata and tostring(itm.Metadata.VariantId) or ""
+    return item.Metadata and tostring(item.Metadata.VariantId) or ""
 end
 
-local function GAIO()
-    local ins = {}
-    local ic = RS:FindFirstChild("Items")
-    if not ic then return {"(No Items)"} end
+local function GetItemOptions()
+    local items = {}
+    local itemsContainer = RS:FindFirstChild("Items")
+    if not itemsContainer then return {"(No Items)"} end
     
-    for _, io in ipairs(ic:GetChildren()) do
-        local in_ = io.Name
-        if type(in_) == "string" and #in_ >= 3 and in_:sub(1, 3) ~= "!!!" then
-            table.insert(ins, in_)
+    for _, obj in ipairs(itemsContainer:GetChildren()) do
+        local itemName = obj.Name
+        if type(itemName) == "string" and #itemName >= 3 and itemName:sub(1, 3) ~= "!!!" then
+            table.insert(items, itemName)
         end
     end
     
-    table.sort(ins)
-    return #ins == 0 and {"(Empty)"} or ins
+    table.sort(items)
+    return #items == 0 and {"(Empty)"} or items
 end
 
-local function GITF()
-    local rep = GPDR()
+local function GetItemsToFav()
+    local rep = GetReplion()
     if not rep then return {} end
     
     local ok, inv = pcall(function() return rep:GetExpect("Inventory") end)
     if not ok or not inv or not inv.Items then return {} end
     
-    local itf = {}
-    local rfa = #SR > 0
-    local nfa = #SN > 0
-    local mfa = #SM > 0
+    local toFav = {}
+    local hasRarityFilter = #selectedRarities > 0
+    local hasNameFilter = #selectedNames > 0
+    local hasMutFilter = #selectedMutations > 0
     
-    if not (rfa or nfa or mfa) then return {} end
+    if not (hasRarityFilter or hasNameFilter or hasMutFilter) then return {} end
     
-    for _, itm in ipairs(inv.Items) do
-        if itm.IsFavorite or itm.Favorited then continue end
+    for _, item in ipairs(inv.Items) do
+        if item.IsFavorite or item.Favorited then continue end
         
-        local uuid = itm.UUID
+        local uuid = item.UUID
         if typeof(uuid) ~= "string" or uuid:len() < 10 then continue end
         
-        local nm, rt = GFNR(itm)
-        local ms = GIMS(itm)
+        local name, rarity = GetNameRarity(item)
+        local mutation = GetMutation(item)
         
         local match = false
         
-        -- Check rarity - FIXED: proper string comparison
-        if rfa then
-            for _, selRar in ipairs(SR) do
-                if rt == tostring(selRar):upper() then
+        -- Check rarity - FIXED
+        if hasRarityFilter then
+            for _, selRar in ipairs(selectedRarities) do
+                local selRarUpper = tostring(selRar):upper()
+                if rarity == selRarUpper then
                     match = true
                     break
                 end
@@ -270,14 +274,14 @@ local function GITF()
         end
         
         -- Check name
-        if not match and nfa and table.find(SN, nm) then
+        if not match and hasNameFilter and table.find(selectedNames, name) then
             match = true
         end
         
         -- Check mutation
-        if not match and mfa then
-            for _, selMut in ipairs(SM) do
-                if string.find(ms, selMut) then
+        if not match and hasMutFilter then
+            for _, selMut in ipairs(selectedMutations) do
+                if string.find(mutation, selMut) then
                     match = true
                     break
                 end
@@ -285,75 +289,75 @@ local function GITF()
         end
         
         if match then
-            table.insert(itf, uuid)
+            table.insert(toFav, uuid)
         end
     end
     
-    return itf
+    return toFav
 end
 
-local function GITU()
-    local rep = GPDR()
+local function GetItemsToUnfav()
+    local rep = GetReplion()
     if not rep then return {} end
     
     local ok, inv = pcall(function() return rep:GetExpect("Inventory") end)
     if not ok or not inv or not inv.Items then return {} end
     
-    local itu = {}
+    local toUnfav = {}
     
-    for _, itm in ipairs(inv.Items) do
-        if not (itm.IsFavorite or itm.Favorited) then continue end
+    for _, item in ipairs(inv.Items) do
+        if not (item.IsFavorite or item.Favorited) then continue end
         
-        local uuid = itm.UUID
+        local uuid = item.UUID
         if typeof(uuid) ~= "string" or uuid:len() < 10 then continue end
         
-        local nm, rt = GFNR(itm)
-        local ms = GIMS(itm)
+        local name, rarity = GetNameRarity(item)
+        local mutation = GetMutation(item)
         
-        local pr, pn, pm = false, false, false
+        local matchRarity, matchName, matchMut = false, false, false
         
-        if #SR > 0 then
-            for _, selRar in ipairs(SR) do
-                if rt == tostring(selRar):upper() then
-                    pr = true
+        if #selectedRarities > 0 then
+            for _, selRar in ipairs(selectedRarities) do
+                if rarity == tostring(selRar):upper() then
+                    matchRarity = true
                     break
                 end
             end
         end
         
-        pn = #SN > 0 and table.find(SN, nm)
+        matchName = #selectedNames > 0 and table.find(selectedNames, name)
         
-        if #SM > 0 then
-            for _, selMut in ipairs(SM) do
-                if string.find(ms, selMut) then
-                    pm = true
+        if #selectedMutations > 0 then
+            for _, selMut in ipairs(selectedMutations) do
+                if string.find(mutation, selMut) then
+                    matchMut = true
                     break
                 end
             end
         end
         
-        if pr or pn or pm then
-            table.insert(itu, uuid)
+        if matchRarity or matchName or matchMut then
+            table.insert(toUnfav, uuid)
         end
     end
     
-    return itu
+    return toUnfav
 end
 
-local function SIFS(uuid)
-    if not R10 then return false end
-    return pcall(function() R10:FireServer(uuid) end)
+local function SetFavState(uuid)
+    if not RE_Favorite then return false end
+    return pcall(function() RE_Favorite:FireServer(uuid) end)
 end
 
-local function RAFL()
-    if AFT then task.cancel(AFT) end
-    AFT = task.spawn(function()
-        while AFS do
-            local itf = GITF()
-            if #itf > 0 then
-                W:Notify({Title = "Auto Fav", Content = #itf .. " items", Duration = 2, Icon = "star"})
-                for _, uuid in ipairs(itf) do
-                    SIFS(uuid)
+local function RunAutoFavLoop()
+    if autoFavThread then task.cancel(autoFavThread) end
+    autoFavThread = task.spawn(function()
+        while autoFavState do
+            local items = GetItemsToFav()
+            if #items > 0 then
+                WindUI:Notify({Title = "Auto Fav", Content = #items .. " items", Duration = 2, Icon = "star"})
+                for _, uuid in ipairs(items) do
+                    SetFavState(uuid)
                     task.wait(0.5)
                 end
             end
@@ -362,15 +366,15 @@ local function RAFL()
     end)
 end
 
-local function RAUL()
-    if AUFT then task.cancel(AUFT) end
-    AUFT = task.spawn(function()
-        while AUFS do
-            local itu = GITU()
-            if #itu > 0 then
-                W:Notify({Title = "Auto Unfav", Content = #itu .. " items", Duration = 2, Icon = "x"})
-                for _, uuid in ipairs(itu) do
-                    SIFS(uuid)
+local function RunAutoUnfavLoop()
+    if autoUnfavThread then task.cancel(autoUnfavThread) end
+    autoUnfavThread = task.spawn(function()
+        while autoUnfavState do
+            local items = GetItemsToUnfav()
+            if #items > 0 then
+                WindUI:Notify({Title = "Auto Unfav", Content = #items .. " items", Duration = 2, Icon = "x"})
+                for _, uuid in ipairs(items) do
+                    SetFavState(uuid)
                     task.wait(0.5)
                 end
             end
@@ -379,370 +383,393 @@ local function RAUL()
     end)
 end
 
--- Blatant Fishing
+-- Blatant Fishing Logic
 task.spawn(function()
     local ok, FC = pcall(function() return require(RS.Controllers.FishingController) end)
     if ok and FC then
-        local OC = FC.RequestChargeFishingRod
-        local OCa = FC.SendFishingRequestToServer
-        FC.RequestChargeFishingRod = function(...) if _G.PH_BA then return end return OC(...) end
-        FC.SendFishingRequestToServer = function(...) if _G.PH_BA then return false, "Blocked" end return OCa(...) end
+        local OldCharge = FC.RequestChargeFishingRod
+        local OldCast = FC.SendFishingRequestToServer
+        FC.RequestChargeFishingRod = function(...)
+            if _G.PlengerHub_BlatantActive then return end
+            return OldCharge(...)
+        end
+        FC.SendFishingRequestToServer = function(...)
+            if _G.PlengerHub_BlatantActive then return false, "Blocked" end
+            return OldCast(...)
+        end
     end
 end)
 
 local mt = getrawmetatable(game)
-local onc = mt.__namecall
+local oldNamecall = mt.__namecall
 setreadonly(mt, false)
-mt.__namecall = newcclosure(function(s, ...)
-    local m = getnamecallmethod()
-    if _G.PH_BA and not checkcaller() then
-        if m == "InvokeServer" and (s.Name == "RequestFishingMinigameStarted" or s.Name == "ChargeFishingRod" or s.Name == "UpdateAutoFishingState") then
+mt.__namecall = newcclosure(function(self, ...)
+    local method = getnamecallmethod()
+    if _G.PlengerHub_BlatantActive and not checkcaller() then
+        if method == "InvokeServer" and (self.Name == "RequestFishingMinigameStarted" or self.Name == "ChargeFishingRod" or self.Name == "UpdateAutoFishingState") then
             return nil
         end
-        if m == "FireServer" and s.Name == "FishingCompleted" then
+        if method == "FireServer" and self.Name == "FishingCompleted" then
             return nil
         end
     end
-    return onc(s, ...)
+    return oldNamecall(self, ...)
 end)
 setreadonly(mt, true)
 
-local function SGV(a)
+local function SuppressVisuals(active)
     local ok, TC = pcall(function() return require(RS.Controllers.TextNotificationController) end)
     if ok and TC then
-        if a then
-            if not TC._OD then TC._OD = TC.DeliverNotification end
-            TC.DeliverNotification = function(se, d)
+        if active then
+            if not TC._OldDeliver then TC._OldDeliver = TC.DeliverNotification end
+            TC.DeliverNotification = function(s, d)
                 if d and d.Text and (string.find(tostring(d.Text), "Auto Fishing") or string.find(tostring(d.Text), "Reach Level")) then
                     return
                 end
-                return TC._OD(se, d)
+                return TC._OldDeliver(s, d)
             end
-        elseif TC._OD then
-            TC.DeliverNotification = TC._OD
-            TC._OD = nil
+        elseif TC._OldDeliver then
+            TC.DeliverNotification = TC._OldDeliver
+            TC._OldDeliver = nil
         end
     end
     
-    if a then
+    if active then
         task.spawn(function()
             local CS = game:GetService("CollectionService")
             local PG = LP:WaitForChild("PlayerGui")
-            local IC = ColorSequence.new({
+            local InactiveColor = ColorSequence.new({
                 ColorSequenceKeypoint.new(0, Color3.fromHex("ff5d60")),
                 ColorSequenceKeypoint.new(1, Color3.fromHex("ff2256"))
             })
-            while _G.PH_BA do
-                local tg = {}
-                for _, b in ipairs(CS:GetTagged("AutoFishingButton")) do
-                    table.insert(tg, b)
+            while _G.PlengerHub_BlatantActive do
+                local targets = {}
+                for _, btn in ipairs(CS:GetTagged("AutoFishingButton")) do
+                    table.insert(targets, btn)
                 end
-                if #tg == 0 then
-                    local b = PG:FindFirstChild("Backpack") and PG.Backpack:FindFirstChild("AutoFishingButton")
-                    if b then table.insert(tg, b) end
+                if #targets == 0 then
+                    local btn = PG:FindFirstChild("Backpack") and PG.Backpack:FindFirstChild("AutoFishingButton")
+                    if btn then table.insert(targets, btn) end
                 end
-                for _, b in ipairs(tg) do
-                    local g = b:FindFirstChild("UIGradient")
-                    if g then g.Color = IC end
+                for _, btn in ipairs(targets) do
+                    local grad = btn:FindFirstChild("UIGradient")
+                    if grad then grad.Color = InactiveColor end
                 end
-                Run.RenderStepped:Wait()
+                RunService.RenderStepped:Wait()
             end
         end)
     end
 end
 
-local function RBI()
-    if not BS then return end
+local function RunBlatantInstant()
+    if not blatantState then return end
     task.spawn(function()
-        local st = os.clock()
-        local ts = os.time() + os.clock()
-        pcall(function() if R2 then R2:InvokeServer(ts) end end)
+        local startTime = os.clock()
+        local timestamp = os.time() + os.clock()
+        pcall(function() if RF_Charge then RF_Charge:InvokeServer(timestamp) end end)
         task.wait(0.001)
-        pcall(function() if R3 then R3:InvokeServer(-139.6379699707, 0.99647927980797) end end)
-        local cw = CD - (os.clock() - st)
-        if cw > 0 then task.wait(cw) end
-        pcall(function() if R4 then R4:FireServer() end end)
-        task.wait(CaD)
-        pcall(function() if R5 then R5:InvokeServer() end end)
+        pcall(function() if RF_Start then RF_Start:InvokeServer(-139.6379699707, 0.99647927980797) end end)
+        local waitTime = completeDelay - (os.clock() - startTime)
+        if waitTime > 0 then task.wait(waitTime) end
+        pcall(function() if RE_Complete then RE_Complete:FireServer() end end)
+        task.wait(cancelDelay)
+        pcall(function() if RF_Cancel then RF_Cancel:InvokeServer() end end)
     end)
 end
 
--- Totem
-local function GTU(n)
-    local rep = GPDR()
+-- Totem Logic
+local function GetTotemUUID(name)
+    local rep = GetReplion()
     if not rep then return nil end
     local ok, inv = pcall(function() return rep:GetExpect("Inventory") end)
     if ok and inv.Totems then
-        for _, itm in ipairs(inv.Totems) do
-            if tonumber(itm.Id) == TD[n].Id and (itm.Count or 1) >= 1 then
-                return itm.UUID
+        for _, item in ipairs(inv.Totems) do
+            if tonumber(item.Id) == TotemData[name].Id and (item.Count or 1) >= 1 then
+                return item.UUID
             end
         end
     end
     return nil
 end
 
-local function UAI()
-    if not R9 then return end
-    local rep = GPDR()
+local function UnequipAll()
+    if not RE_UnequipItem then return end
+    local rep = GetReplion()
     if rep then
-        local ok, eq = pcall(function() return rep:GetExpect("EquippedItems") end)
-        if ok and eq then
-            for _, uuid in ipairs(eq) do
-                pcall(function() R9:FireServer(uuid) end)
+        local ok, equipped = pcall(function() return rep:GetExpect("EquippedItems") end)
+        if ok and equipped then
+            for _, uuid in ipairs(equipped) do
+                pcall(function() RE_UnequipItem:FireServer(uuid) end)
                 task.wait(0.05)
             end
         end
     end
 end
 
-local function UTS(t, c)
-    if TSP then
-        TSP:SetTitle(t)
-        TSP:SetDesc(c)
+local function UpdateTotemStatus(title, content)
+    if TotemStatusPara then
+        TotemStatusPara:SetTitle(title)
+        TotemStatusPara:SetDesc(content)
     end
 end
 
-local function HPM()
-    if not LSP then return false end
-    local hrp = GHRP()
+local function HasPlayerMoved()
+    if not lastSpawnPos then return false end
+    local hrp = GetHRP()
     if not hrp then return false end
-    return (hrp.Position - LSP).Magnitude > 50
+    return (hrp.Position - lastSpawnPos).Magnitude > 50
 end
 
-local function STCP()
-    local uuid = GTU(STN)
+local function SpawnTotemAtPos()
+    local uuid = GetTotemUUID(selectedTotem)
     if not uuid then
-        UTS("❌ No Stock", "No " .. STN .. " found!")
-        W:Notify({Title = "Failed", Content = "No " .. STN, Duration = 5, Icon = "alert-triangle"})
+        UpdateTotemStatus("❌ No Stock", "No " .. selectedTotem .. " found!")
+        WindUI:Notify({Title = "Failed", Content = "No " .. selectedTotem, Duration = 5, Icon = "alert-triangle"})
         return false
     end
     
-    UTS("🔧 Prep...", "Clearing...")
-    UAI()
+    UpdateTotemStatus("🔧 Preparing...", "Clearing items...")
+    UnequipAll()
     task.wait(0.3)
-    UTS("📦 Equip...", "Equipping " .. STN)
-    pcall(function() if R8 then R8:FireServer(uuid, "Totems") end end)
+    UpdateTotemStatus("📦 Equipping...", "Equipping " .. selectedTotem)
+    pcall(function() if RE_EquipItem then RE_EquipItem:FireServer(uuid, "Totems") end end)
     task.wait(0.5)
-    UTS("🎯 Active...", "Hotbar slot 2")
-    pcall(function() if R1 then R1:FireServer(2) end end)
+    UpdateTotemStatus("🎯 Activating...", "Hotbar slot 2")
+    pcall(function() if RE_Equip then RE_Equip:FireServer(2) end end)
     task.wait(0.8)
-    UTS("✨ Spawn...", "Spawning " .. STN)
-    pcall(function() if R7 then R7:FireServer(uuid) end end)
+    UpdateTotemStatus("✨ Spawning...", "Spawning " .. selectedTotem)
+    pcall(function() if RE_SpawnTotem then RE_SpawnTotem:FireServer(uuid) end end)
     
-    local hrp = GHRP()
-    if hrp then LSP = hrp.Position end
-    CTE = os.time() + TD[STN].Duration
+    local hrp = GetHRP()
+    if hrp then lastSpawnPos = hrp.Position end
+    totemExpiry = os.time() + TotemData[selectedTotem].Duration
     
     task.spawn(function()
         for i = 1, 3 do
             task.wait(0.2)
-            pcall(function() if R1 then R1:FireServer(1) end end)
+            pcall(function() if RE_Equip then RE_Equip:FireServer(1) end end)
         end
     end)
     
-    local sp = LSP or Vector3.new(0,0,0)
-    W:Notify({Title = "Spawned!", Content = string.format("%s at X:%.1f Y:%.1f Z:%.1f", STN, sp.X, sp.Y, sp.Z), Duration = 3, Icon = "check"})
+    local pos = lastSpawnPos or Vector3.new(0,0,0)
+    WindUI:Notify({Title = "Spawned!", Content = string.format("%s at X:%.1f Y:%.1f Z:%.1f", selectedTotem, pos.X, pos.Y, pos.Z), Duration = 3, Icon = "check"})
     return true
 end
 
-local function RATL()
-    if ATT then task.cancel(ATT) end
-    ATT = task.spawn(function()
-        local hrp = GHRP()
+local function RunAutoTotemLoop()
+    if autoTotemThread then task.cancel(autoTotemThread) end
+    autoTotemThread = task.spawn(function()
+        local hrp = GetHRP()
         if hrp then
             local p = hrp.Position
-            UTS("🚀 Init...", string.format("X:%.1f Y:%.1f Z:%.1f", p.X, p.Y, p.Z))
+            UpdateTotemStatus("🚀 Initializing...", string.format("At X:%.1f Y:%.1f Z:%.1f", p.X, p.Y, p.Z))
         end
-        while ATA do
-            local tl = CTE - os.time()
-            local hrp = GHRP()
-            local cp = hrp and hrp.Position or Vector3.new(0,0,0)
-            if tl > 0 then
-                local m = math.floor((tl % 3600) / 60)
-                local s = math.floor(tl % 60)
-                if HPM() then
-                    UTS(string.format("⏳ %s (Moved)", STN), string.format("Next: %02d:%02d\n📍 X:%.1f Y:%.1f Z:%.1f\n⚠️ Will spawn here!", m, s, cp.X, cp.Y, cp.Z))
+        while autoTotemActive do
+            local timeLeft = totemExpiry - os.time()
+            local hrp = GetHRP()
+            local currentPos = hrp and hrp.Position or Vector3.new(0,0,0)
+            if timeLeft > 0 then
+                local mins = math.floor((timeLeft % 3600) / 60)
+                local secs = math.floor(timeLeft % 60)
+                if HasPlayerMoved() then
+                    UpdateTotemStatus(string.format("⏳ %s (Moved)", selectedTotem), string.format("Next: %02d:%02d\n📍 X:%.1f Y:%.1f Z:%.1f\n⚠️ Will spawn here!", mins, secs, currentPos.X, currentPos.Y, currentPos.Z))
                 else
-                    UTS(string.format("⏳ %s Active", STN), string.format("Next: %02d:%02d\n📍 X:%.1f Y:%.1f Z:%.1f", m, s, cp.X, cp.Y, cp.Z))
+                    UpdateTotemStatus(string.format("⏳ %s Active", selectedTotem), string.format("Next: %02d:%02d\n📍 X:%.1f Y:%.1f Z:%.1f", mins, secs, currentPos.X, currentPos.Y, currentPos.Z))
                 end
             else
-                UTS("🔍 Check...", "Searching " .. STN)
-                local ss = STCP()
-                if not ss then task.wait(10) end
+                UpdateTotemStatus("🔍 Checking...", "Searching " .. selectedTotem)
+                local success = SpawnTotemAtPos()
+                if not success then task.wait(10) end
             end
             task.wait(1)
         end
     end)
 end
 
--- UI
-local ft = Win:Tab({Title = "Fishing", Icon = "fish", Locked = false})
-local bs = ft:Section({Title = "Blatant Mode", TextSize = 20})
+-- UI Creation
+local fishTab = Window:Tab({Title = "Fishing", Icon = "fish", Locked = false})
+local blatantSec = fishTab:Section({Title = "Blatant Mode", TextSize = 20})
 
-bs:Input({Title = "Interval", Value = tostring(LI), Icon = "fast-forward", Type = "Input", Placeholder = "1.58",
-    Callback = function(i) local n = tonumber(i) if n and n >= 0.5 then LI = n end end})
-bs:Input({Title = "Complete", Value = tostring(CD), Icon = "loader", Type = "Input", Placeholder = "2.75",
-    Callback = function(i) local n = tonumber(i) if n and n >= 0.5 then CD = n end end})
-bs:Input({Title = "Cancel", Value = tostring(CaD), Icon = "clock", Type = "Input", Placeholder = "0.3",
-    Callback = function(i) local n = tonumber(i) if n and n >= 0.1 then CaD = n end end})
+blatantSec:Input({Title = "Interval", Value = tostring(loopInterval), Icon = "fast-forward", Type = "Input", Placeholder = "1.58",
+    Callback = function(inp)
+        local num = tonumber(inp)
+        if num and num >= 0.5 then loopInterval = num end
+    end})
 
-bs:Toggle({Title = "Instant Fishing", Value = false,
-    Callback = function(st)
-        BS = st
-        _G.PH_BA = st
-        SGV(st)
-        if st then
-            if R6 then
-                pcall(function() R6:InvokeServer(true) end)
+blatantSec:Input({Title = "Complete Delay", Value = tostring(completeDelay), Icon = "loader", Type = "Input", Placeholder = "2.75",
+    Callback = function(inp)
+        local num = tonumber(inp)
+        if num and num >= 0.5 then completeDelay = num end
+    end})
+
+blatantSec:Input({Title = "Cancel Delay", Value = tostring(cancelDelay), Icon = "clock", Type = "Input", Placeholder = "0.3",
+    Callback = function(inp)
+        local num = tonumber(inp)
+        if num and num >= 0.1 then cancelDelay = num end
+    end})
+
+blatantSec:Toggle({Title = "Instant Fishing", Value = false,
+    Callback = function(state)
+        blatantState = state
+        _G.PlengerHub_BlatantActive = state
+        SuppressVisuals(state)
+        if state then
+            if RF_AutoState then
+                pcall(function() RF_AutoState:InvokeServer(true) end)
                 task.wait(0.5)
-                pcall(function() R6:InvokeServer(true) end)
-                pcall(function() R6:InvokeServer(true) end)
+                pcall(function() RF_AutoState:InvokeServer(true) end)
+                pcall(function() RF_AutoState:InvokeServer(true) end)
             end
-            BLT = task.spawn(function()
-                while BS do RBI() task.wait(LI) end
+            blatantLoop = task.spawn(function()
+                while blatantState do
+                    RunBlatantInstant()
+                    task.wait(loopInterval)
+                end
             end)
-            if BET then task.cancel(BET) end
-            BET = task.spawn(function()
-                while BS do
-                    pcall(function() if R1 then R1:FireServer(1) end end)
+            if blatantEquip then task.cancel(blatantEquip) end
+            blatantEquip = task.spawn(function()
+                while blatantState do
+                    pcall(function() if RE_Equip then RE_Equip:FireServer(1) end end)
                     task.wait(0.1)
                 end
             end)
-            W:Notify({Title = "ON", Duration = 3, Icon = "zap"})
+            WindUI:Notify({Title = "Blatant ON", Duration = 3, Icon = "zap"})
         else
-            if R6 then pcall(function() R6:InvokeServer(false) end) end
-            if BLT then task.cancel(BLT) BLT = nil end
-            if BET then task.cancel(BET) BET = nil end
-            W:Notify({Title = "OFF", Duration = 2})
+            if RF_AutoState then pcall(function() RF_AutoState:InvokeServer(false) end) end
+            if blatantLoop then task.cancel(blatantLoop) blatantLoop = nil end
+            if blatantEquip then task.cancel(blatantEquip) blatantEquip = nil end
+            WindUI:Notify({Title = "Blatant OFF", Duration = 2})
         end
     end})
 
-local at = Win:Tab({Title = "Auto Fav", Icon = "star", IconColor = Color3.fromHex("#FFD700"), IconShape = true, Locked = false})
-local fs = at:Section({Title = "Filters", TextSize = 20})
+local favTab = Window:Tab({Title = "Auto Favorite", Icon = "star", IconColor = Color3.fromHex("#FFD700"), IconShape = true, Locked = false})
+local favSec = favTab:Section({Title = "Filters & Controls", TextSize = 20})
 
-fs:Paragraph({Title = "⚠️ Status", Content = UL and "✅ Ready!" or "⏳ Loading...", Icon = "info"})
-fs:Button({Title = "Retry Load", Icon = "refresh-cw", Desc = "Click if failed",
+favSec:Paragraph({Title = "⚠️ Status", Content = UtilsLoaded and "✅ Ready!" or "⏳ Loading...", Icon = "info"})
+
+favSec:Button({Title = "Retry Load Utils", Icon = "refresh-cw", Desc = "If failed to load",
     Callback = function()
-        W:Notify({Title = "Retry...", Content = "Loading utils...", Duration = 2, Icon = "loader"})
+        WindUI:Notify({Title = "Retrying...", Content = "Loading utilities...", Duration = 2, Icon = "loader"})
         task.spawn(function()
-            if LU() then
-                W:Notify({Title = "OK!", Content = "Utils loaded!", Duration = 3, Icon = "check"})
+            if LoadUtils() then
+                WindUI:Notify({Title = "Success!", Content = "Utils loaded!", Duration = 3, Icon = "check"})
             else
-                W:Notify({Title = "Fail", Content = "Still failed", Duration = 5, Icon = "x"})
+                WindUI:Notify({Title = "Failed", Content = "Still failed to load", Duration = 5, Icon = "x"})
             end
         end)
     end})
 
-at:Divider()
+favTab:Divider()
 
-fs:Dropdown({Title = "Rarity", Values = {"COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY", "MYTHIC", "SECRET"},
+favSec:Dropdown({Title = "Filter by Rarity", Values = {"COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY", "MYTHIC", "SECRET"},
     Multi = true, AllowNone = true, Value = false,
-    Callback = function(v) SR = v or {} end})
+    Callback = function(vals) selectedRarities = vals or {} end})
 
-local ain = GAIO()
-fs:Dropdown({Title = "Item Name", Values = ain, Multi = true, AllowNone = true, Value = false,
-    Callback = function(v) SN = v or {} end})
+local itemNames = GetItemOptions()
+favSec:Dropdown({Title = "Filter by Name", Values = itemNames, Multi = true, AllowNone = true, Value = false,
+    Callback = function(vals) selectedNames = vals or {} end})
 
-fs:Dropdown({Title = "Mutation", Values = {"Shiny", "VariantId"}, Multi = true, AllowNone = true, Value = false,
-    Callback = function(v) SM = v or {} end})
+favSec:Dropdown({Title = "Filter by Mutation", Values = {"Shiny", "VariantId"}, Multi = true, AllowNone = true, Value = false,
+    Callback = function(vals) selectedMutations = vals or {} end})
 
-at:Divider()
+favTab:Divider()
 
-fs:Toggle({Title = "Auto Favorite", Desc = "Enable auto favorite", Value = false,
-    Callback = function(st)
-        AFS = st
-        if st then
-            if AUFS then
-                AUFS = false
-                if AUFT then task.cancel(AUFT) AUFT = nil end
+favSec:Toggle({Title = "Enable Auto Favorite", Desc = "Auto favorite items", Value = false,
+    Callback = function(state)
+        autoFavState = state
+        if state then
+            if autoUnfavState then
+                autoUnfavState = false
+                if autoUnfavThread then task.cancel(autoUnfavThread) autoUnfavThread = nil end
             end
-            if not GPDR() then
-                W:Notify({Title = "Error", Content = "Replion failed", Duration = 3, Icon = "x"})
+            if not GetReplion() then
+                WindUI:Notify({Title = "Error", Content = "Replion failed to load", Duration = 3, Icon = "x"})
                 return false
             end
-            if not UL then
-                W:Notify({Title = "Warn", Content = "Utils not loaded!", Duration = 5, Icon = "alert-triangle"})
+            if not UtilsLoaded then
+                WindUI:Notify({Title = "Warning", Content = "Utils not loaded! Click Retry first", Duration = 5, Icon = "alert-triangle"})
                 return false
             end
-            W:Notify({Title = "Fav ON!", Duration = 3, Icon = "check"})
-            RAFL()
+            WindUI:Notify({Title = "Auto Favorite ON!", Duration = 3, Icon = "check"})
+            RunAutoFavLoop()
         else
-            W:Notify({Title = "Fav OFF!", Duration = 3, Icon = "x"})
-            if AFT then task.cancel(AFT) AFT = nil end
+            WindUI:Notify({Title = "Auto Favorite OFF!", Duration = 3, Icon = "x"})
+            if autoFavThread then task.cancel(autoFavThread) autoFavThread = nil end
         end
     end})
 
-fs:Toggle({Title = "Auto Unfavorite", Desc = "Enable auto unfavorite", Value = false,
-    Callback = function(st)
-        AUFS = st
-        if st then
-            if AFS then
-                AFS = false
-                if AFT then task.cancel(AFT) AFT = nil end
+favSec:Toggle({Title = "Enable Auto Unfavorite", Desc = "Auto unfavorite items", Value = false,
+    Callback = function(state)
+        autoUnfavState = state
+        if state then
+            if autoFavState then
+                autoFavState = false
+                if autoFavThread then task.cancel(autoFavThread) autoFavThread = nil end
             end
-            if #SR == 0 and #SN == 0 and #SM == 0 then
-                W:Notify({Title = "Warn!", Content = "All filters empty!", Duration = 5, Icon = "alert-triangle"})
+            if #selectedRarities == 0 and #selectedNames == 0 and #selectedMutations == 0 then
+                WindUI:Notify({Title = "Warning!", Content = "All filters empty!", Duration = 5, Icon = "alert-triangle"})
                 return false
             end
-            if not GPDR() then
-                W:Notify({Title = "Error", Content = "Replion failed", Duration = 3, Icon = "x"})
+            if not GetReplion() then
+                WindUI:Notify({Title = "Error", Content = "Replion failed to load", Duration = 3, Icon = "x"})
                 return false
             end
-            if not UL then
-                W:Notify({Title = "Warn", Content = "Utils not loaded!", Duration = 5, Icon = "alert-triangle"})
+            if not UtilsLoaded then
+                WindUI:Notify({Title = "Warning", Content = "Utils not loaded! Click Retry first", Duration = 5, Icon = "alert-triangle"})
                 return false
             end
-            W:Notify({Title = "Unfav ON!", Duration = 3, Icon = "check"})
-            RAUL()
+            WindUI:Notify({Title = "Auto Unfavorite ON!", Duration = 3, Icon = "check"})
+            RunAutoUnfavLoop()
         else
-            W:Notify({Title = "Unfav OFF!", Duration = 3, Icon = "x"})
-            if AUFT then task.cancel(AUFT) AUFT = nil end
+            WindUI:Notify({Title = "Auto Unfavorite OFF!", Duration = 3, Icon = "x"})
+            if autoUnfavThread then task.cancel(autoUnfavThread) autoUnfavThread = nil end
         end
     end})
 
-local pt = Win:Tab({Title = "Premium", Icon = "star", IconColor = Color3.fromHex("#42f5b9"), IconShape = true, Locked = false})
-local ts = pt:Section({Title = "Auto Totem", TextSize = 20})
-pt:Divider()
+local premTab = Window:Tab({Title = "Premium", Icon = "star", IconColor = Color3.fromHex("#42f5b9"), IconShape = true, Locked = false})
+local totemSec = premTab:Section({Title = "Auto Spawn Totem", TextSize = 20})
+premTab:Divider()
 
-TSP = ts:Paragraph({Title = "💤 Idle", Content = "Aktifkan toggle.\n\n✨ Timer persistent!\n📍 Spawn di posisi baru.", Icon = "clock"})
+TotemStatusPara = totemSec:Paragraph({Title = "💤 Status: Idle", Content = "Enable toggle to start.\n\n✨ Timer persistent!\n📍 Spawns at new position.", Icon = "clock"})
 
-ts:Dropdown({Title = "Totem Type", Values = TN, Value = STN, Multi = false,
-    Callback = function(n)
-        STN = n
-        CTE = 0
-        LSP = nil
-        UTS("🔄 Changed", "Switched to " .. n .. "\nReset.")
+totemSec:Dropdown({Title = "Totem Type", Values = TotemNames, Value = selectedTotem, Multi = false,
+    Callback = function(name)
+        selectedTotem = name
+        totemExpiry = 0
+        lastSpawnPos = nil
+        UpdateTotemStatus("🔄 Changed", "Switched to " .. name .. "\nTimer reset.")
     end})
 
-ts:Toggle({Title = "Enable Auto Totem", Desc = "Smart timer + detect move", Value = false,
-    Callback = function(st)
-        ATA = st
-        if st then
-            RATL()
-            W:Notify({Title = "Totem ON", Content = "Timer persistent!", Duration = 3, Icon = "play"})
+totemSec:Toggle({Title = "Enable Auto Totem", Desc = "Smart timer + position detection", Value = false,
+    Callback = function(state)
+        autoTotemActive = state
+        if state then
+            RunAutoTotemLoop()
+            WindUI:Notify({Title = "Auto Totem Started", Content = "Timer is persistent!", Duration = 3, Icon = "play"})
         else
-            if ATT then task.cancel(ATT) ATT = nil end
-            UTS("⏹️ Stop", "Disabled.\nReset.")
-            CTE = 0
-            LSP = nil
-            W:Notify({Title = "Totem OFF", Duration = 2, Icon = "square"})
+            if autoTotemThread then task.cancel(autoTotemThread) autoTotemThread = nil end
+            UpdateTotemStatus("⏹️ Stopped", "Auto Totem disabled.\nTimer reset.")
+            totemExpiry = 0
+            lastSpawnPos = nil
+            WindUI:Notify({Title = "Auto Totem Stopped", Duration = 2, Icon = "square"})
         end
     end})
 
-ts:Button({Title = "Manual Spawn", Icon = "zap", Desc = "Spawn once",
+totemSec:Button({Title = "Manual Spawn Now", Icon = "zap", Desc = "Spawn once + reset timer",
     Callback = function()
-        local s = STCP()
-        if s then W:Notify({Title = "OK", Content = "Reset to 60min", Duration = 3, Icon = "check"}) end
+        local success = SpawnTotemAtPos()
+        if success then
+            WindUI:Notify({Title = "Spawned!", Content = "Timer reset to 60 min", Duration = 3, Icon = "check"})
+        end
     end})
 
-ts:Button({Title = "Reset Timer", Icon = "refresh-cw", Desc = "Reset countdown",
+totemSec:Button({Title = "Reset Timer", Icon = "refresh-cw", Desc = "Reset countdown",
     Callback = function()
-        CTE = 0
-        LSP = nil
-        UTS("🔄 Reset", "Ready!")
-        W:Notify({Title = "Reset", Content = "0", Duration = 2, Icon = "rotate-ccw"})
+        totemExpiry = 0
+        lastSpawnPos = nil
+        UpdateTotemStatus("🔄 Timer Reset", "Ready to spawn!")
+        WindUI:Notify({Title = "Timer Reset", Content = "Countdown reset to 0", Duration = 2, Icon = "rotate-ccw"})
     end})
 
-Win:Tag({Title = "Opt V1.6", Color = Color3.fromHex("#F5C527"), Radius = 9})
-W:Notify({Title = "Plenger Hub V1.6", Content = "Optimized & Fixed!", Duration = 5, Icon = "info"})
+Window:Tag({Title = "Fixed V1.7", Color = Color3.fromHex("#F5C527"), Radius = 9})
+WindUI:Notify({Title = "Plenger Hub V1.7", Content = "All rarities fixed + Optimized!", Duration = 5, Icon = "info"})
