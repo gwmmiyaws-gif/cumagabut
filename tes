@@ -1,3 +1,7 @@
+--!strict
+-- Plenger Hub Premium - Blatant Fishing & Auto Totem Only
+-- Fixed: Timer Persistent + Spawn at New Position
+
 local WindUI
 
 do
@@ -12,15 +16,31 @@ do
     end
 end
 
+-- =====================================================
+-- TYPE DEFINITIONS
+-- =====================================================
+type RemoteEvent = RemoteEvent
+type RemoteFunction = RemoteFunction
+type Vector3 = Vector3
+type CFrame = CFrame
+
+-- =====================================================
+-- SERVICES & GLOBALS
+-- =====================================================
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
 
-local RPath = {"Packages", "_Index", "sleitnick_net@0.2.0", "net"}
-local function GetRemote(remotePath, name)
-    local currentInstance = ReplicatedStorage
+local LocalPlayer: Player = Players.LocalPlayer
+local RPath: {string} = {"Packages", "_Index", "sleitnick_net@0.2.0", "net"}
+
+-- =====================================================
+-- HELPER FUNCTIONS
+-- =====================================================
+local function GetRemote(remotePath: {string}, name: string, timeout: number?): Instance?
+    local currentInstance: Instance = ReplicatedStorage
     for _, childName in ipairs(remotePath) do
-        local child = currentInstance:WaitForChild(childName, 0.5)
+        local child = currentInstance:WaitForChild(childName, timeout or 0.5)
         if not child then 
             return nil 
         end
@@ -29,54 +49,108 @@ local function GetRemote(remotePath, name)
     return currentInstance:FindFirstChild(name)
 end
 
-local Vars = {
-    R = {
-        EquipTool = GetRemote(RPath, "RE/EquipToolFromHotbar"),
-        SpawnTotem = GetRemote(RPath, "RE/SpawnTotem"),
-        EquipItem = GetRemote(RPath, "RE/EquipItem"),
-        UnequipItem = GetRemote(RPath, "RE/UnequipItem")
-    },
-    T = { 
-        Active = false,
-        Thread = nil,
-        Name = nil,
-        Expiry = 0
-    },
-    Totems = {
-        Data = {
-            ["Luck Totem"] = {Id = 1, Duration = 3601},
-            ["Mutation Totem"] = {Id = 2, Duration = 3601},
-            ["Shiny Totem"] = {Id = 3, Duration = 3601}
-        },
-        Names = {"Luck Totem", "Mutation Totem", "Shiny Totem"}
-    }
+local function GetHRP(): BasePart?
+    local Character = LocalPlayer.Character
+    if not Character then
+        Character = LocalPlayer.CharacterAdded:Wait()
+    end
+    return Character:WaitForChild("HumanoidRootPart", 5) :: BasePart
+end
+
+-- =====================================================
+-- REMOTE DEFINITIONS
+-- =====================================================
+local RE_EquipToolFromHotbar = GetRemote(RPath, "RE/EquipToolFromHotbar") :: RemoteEvent?
+local RF_ChargeFishingRod = GetRemote(RPath, "RF/ChargeFishingRod") :: RemoteFunction?
+local RF_RequestFishingMinigameStarted = GetRemote(RPath, "RF/RequestFishingMinigameStarted") :: RemoteFunction?
+local RE_FishingCompleted = GetRemote(RPath, "RE/FishingCompleted") :: RemoteEvent?
+local RF_CancelFishingInputs = GetRemote(RPath, "RF/CancelFishingInputs") :: RemoteFunction?
+local RF_UpdateAutoFishingState = GetRemote(RPath, "RF/UpdateAutoFishingState") :: RemoteFunction?
+local RE_SpawnTotem = GetRemote(RPath, "RE/SpawnTotem") :: RemoteEvent?
+local RE_EquipItem = GetRemote(RPath, "RE/EquipItem") :: RemoteEvent?
+local RE_UnequipItem = GetRemote(RPath, "RE/UnequipItem") :: RemoteEvent?
+
+-- =====================================================
+-- BLATANT FISHING VARIABLES
+-- =====================================================
+local blatantInstantState: boolean = false
+local blatantLoopThread: thread? = nil
+local blatantEquipThread: thread? = nil
+
+local completeDelay: number = 3.055
+local cancelDelay: number = 0.3
+local loopInterval: number = 1.715
+
+_G.PlengerHub_BlatantActive = false
+
+-- =====================================================
+-- TOTEM VARIABLES (ENHANCED WITH PERSISTENT TIMER)
+-- =====================================================
+local AUTO_TOTEM_ACTIVE: boolean = false
+local AUTO_TOTEM_THREAD: thread? = nil
+local selectedTotemName: string = "Luck Totem"
+local currentTotemExpiry: number = 0
+local lastSpawnPosition: Vector3? = nil
+
+local TOTEM_DATA: {[string]: {Id: number, Duration: number}} = {
+    ["Luck Totem"] = {Id = 1, Duration = 3601},
+    ["Mutation Totem"] = {Id = 2, Duration = 3601},
+    ["Shiny Totem"] = {Id = 3, Duration = 3601}
 }
 
+local TOTEM_NAMES: {string} = {"Luck Totem", "Mutation Totem", "Shiny Totem"}
+
+-- UI Status Paragraph
+local TOTEM_STATUS_PARAGRAPH: any = nil
+
+-- =====================================================
+-- ANTI-AFK
+-- =====================================================
+pcall(function()
+    local player = LocalPlayer
+    for _, v in pairs(getconnections(player.Idled)) do
+        if v.Disable then
+            v:Disable()
+            print("[Plenger Hub Anti-AFK] ON")
+        end
+    end
+end)
+
+-- =====================================================
+-- WINDOW CREATION
+-- =====================================================
 local Window = WindUI:CreateWindow({
-    Title = "LS Hub - Fish It",
-    Author = "developed by Louissxe",
-    Folder = "LSHub-FishIt",
-    Icon = "rbxassetid://129609617845057",
+    Title = "Plenger Hub - Fish It",
+    Author = "Premium Version",
+    Folder = "PlengerHub-FishIt",
+    Icon = "rbxassetid://7733779610",
     Transparent = true,
-    IconSize = 12*2,
+    IconSize = 24,
     NewElements = true,
-    Size = UDim2.fromOffset(580, 380),
+    Size = UDim2.fromOffset(600, 360),
+    MinSize = Vector2.new(560, 250),
+    MaxSize = Vector2.new(950, 760),
     ToggleKey = Enum.KeyCode.G,
+    Resizable = true,
+    SideBarWidth = 190,
+    BackgroundImageTransparency = 0.42,
+    HideSearchBar = true,
+    ScrollBarEnabled = true,
     User = {
         Enabled = true,
-        Anonymous = true,
+        Anonymous = false,
     },
-    HideSearchBar = false,
     OpenButton = {
-        Title = "Open LS Hub",
-        CornerRadius = UDim.new(0.3,0),
-        StrokeThickness = 3,
+        Title = "Plenger Hub - Fish It",
+        Icon = "rbxassetid://7733779610",
+        CornerRadius = UDim.new(0, 30),
+        StrokeThickness = 1.5,
         Enabled = true,
         Draggable = true,
         OnlyMobile = false,
         Color = ColorSequence.new(
-            Color3.fromRGB(107, 49, 255), 
-            Color3.fromRGB(215, 48, 221)
+            Color3.fromHex("FF0F7B"),
+            Color3.fromHex("F89B29")
         )
     },
     Topbar = {
@@ -85,6 +159,170 @@ local Window = WindUI:CreateWindow({
     },
 })
 
+-- =====================================================
+-- BLATANT FISHING LOGIC
+-- =====================================================
+
+-- [1] CONTROLLER KILLER
+task.spawn(function()
+    local success, FishingController = pcall(function() 
+        return require(ReplicatedStorage.Controllers.FishingController) 
+    end)
+    
+    if success and FishingController then
+        local Old_Charge = FishingController.RequestChargeFishingRod
+        local Old_Cast = FishingController.SendFishingRequestToServer
+        
+        FishingController.RequestChargeFishingRod = function(...)
+            if _G.PlengerHub_BlatantActive then 
+                return 
+            end 
+            return Old_Charge(...)
+        end
+        
+        FishingController.SendFishingRequestToServer = function(...)
+            if _G.PlengerHub_BlatantActive then 
+                return false, "Blocked by Plenger Hub" 
+            end
+            return Old_Cast(...)
+        end
+    end
+end)
+
+-- [2] REMOTE KILLER
+local mt = getrawmetatable(game)
+local old_namecall = mt.__namecall
+setreadonly(mt, false)
+
+mt.__namecall = newcclosure(function(self: Instance, ...: any): any
+    local method = getnamecallmethod()
+    if _G.PlengerHub_BlatantActive and not checkcaller() then
+        if method == "InvokeServer" and (
+            self.Name == "RequestFishingMinigameStarted" or 
+            self.Name == "ChargeFishingRod" or 
+            self.Name == "UpdateAutoFishingState"
+        ) then
+            return nil 
+        end
+        if method == "FireServer" and self.Name == "FishingCompleted" then
+            return nil
+        end
+    end
+    return old_namecall(self, ...)
+end)
+
+setreadonly(mt, true)
+
+-- [3] UI SPOOF
+local function SuppressGameVisuals(active: boolean): ()
+    local success, TextController = pcall(function() 
+        return require(ReplicatedStorage.Controllers.TextNotificationController) 
+    end)
+    
+    if success and TextController then
+        if active then
+            if not TextController._OldDeliver then 
+                TextController._OldDeliver = TextController.DeliverNotification 
+            end
+            TextController.DeliverNotification = function(self, data)
+                if data and data.Text and (
+                    string.find(tostring(data.Text), "Auto Fishing") or 
+                    string.find(tostring(data.Text), "Reach Level")
+                ) then
+                    return 
+                end
+                return TextController._OldDeliver(self, data)
+            end
+        elseif TextController._OldDeliver then
+            TextController.DeliverNotification = TextController._OldDeliver
+            TextController._OldDeliver = nil
+        end
+    end
+
+    if active then
+        task.spawn(function()
+            local CollectionService = game:GetService("CollectionService")
+            local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+            
+            local InactiveColor = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.fromHex("ff5d60")), 
+                ColorSequenceKeypoint.new(1, Color3.fromHex("ff2256"))
+            })
+
+            while _G.PlengerHub_BlatantActive do
+                local targets: {Instance} = {}
+                
+                for _, btn in ipairs(CollectionService:GetTagged("AutoFishingButton")) do
+                    table.insert(targets, btn)
+                end
+                
+                if #targets == 0 then
+                    local btn = PlayerGui:FindFirstChild("Backpack") 
+                        and PlayerGui.Backpack:FindFirstChild("AutoFishingButton")
+                    if btn then 
+                        table.insert(targets, btn) 
+                    end
+                end
+
+                for _, btn in ipairs(targets) do
+                    local grad = btn:FindFirstChild("UIGradient")
+                    if grad then
+                        grad.Color = InactiveColor
+                    end
+                end
+                
+                RunService.RenderStepped:Wait()
+            end
+        end)
+    end
+end
+
+-- [4] INSTANT FISH FUNCTION
+local function runBlatantInstant(): ()
+    if not blatantInstantState then 
+        return 
+    end
+    
+    task.spawn(function()
+        local startTime: number = os.clock()
+        local timestamp: number = os.time() + os.clock()
+        
+        pcall(function() 
+            if RF_ChargeFishingRod then
+                RF_ChargeFishingRod:InvokeServer(timestamp) 
+            end
+        end)
+        task.wait(0.001)
+        
+        pcall(function() 
+            if RF_RequestFishingMinigameStarted then
+                RF_RequestFishingMinigameStarted:InvokeServer(-139.6379699707, 0.99647927980797) 
+            end
+        end)
+        
+        local completeWaitTime: number = completeDelay - (os.clock() - startTime)
+        if completeWaitTime > 0 then 
+            task.wait(completeWaitTime) 
+        end
+        
+        pcall(function() 
+            if RE_FishingCompleted then
+                RE_FishingCompleted:FireServer() 
+            end
+        end)
+        task.wait(cancelDelay)
+        
+        pcall(function() 
+            if RF_CancelFishingInputs then
+                RF_CancelFishingInputs:InvokeServer() 
+            end
+        end)
+    end)
+end
+
+-- =====================================================
+-- TOTEM LOGIC (PERSISTENT TIMER + AUTO DETECT NEW POSITION)
+-- =====================================================
 local function GetPlayerDataReplion()
     local ReplionModule = ReplicatedStorage:WaitForChild("Packages"):WaitForChild("Replion", 10)
     if not ReplionModule then 
@@ -94,7 +332,7 @@ local function GetPlayerDataReplion()
     return ReplionClient:WaitReplion("Data", 5)
 end
 
-local function GetTotemUUID(name)
+local function GetTotemUUID(name: string): string?
     local replion = GetPlayerDataReplion()
     if not replion then 
         return nil 
@@ -106,7 +344,7 @@ local function GetTotemUUID(name)
     
     if success and inventoryData.Totems then 
         for _, item in ipairs(inventoryData.Totems) do 
-            if tonumber(item.Id) == Vars.Totems.Data[name].Id and (item.Count or 1) >= 1 then 
+            if tonumber(item.Id) == TOTEM_DATA[name].Id and (item.Count or 1) >= 1 then 
                 return item.UUID 
             end 
         end 
@@ -115,8 +353,8 @@ local function GetTotemUUID(name)
     return nil
 end
 
-local function UnequipAllItems()
-    if not Vars.R.UnequipItem then return end
+local function UnequipAllItems(): ()
+    if not RE_UnequipItem then return end
     
     local replion = GetPlayerDataReplion()
     if replion then
@@ -127,7 +365,7 @@ local function UnequipAllItems()
         if success and equippedItems then
             for _, uuid in ipairs(equippedItems) do
                 pcall(function() 
-                    Vars.R.UnequipItem:FireServer(uuid) 
+                    RE_UnequipItem:FireServer(uuid) 
                 end)
                 task.wait(0.05)
             end
@@ -135,58 +373,93 @@ local function UnequipAllItems()
     end
 end
 
-local function SpawnTotem()
-    local uuid = GetTotemUUID(Vars.T.Name)
+local function UpdateTotemStatus(title: string, content: string): ()
+    if TOTEM_STATUS_PARAGRAPH then
+        TOTEM_STATUS_PARAGRAPH:SetTitle(title)
+        TOTEM_STATUS_PARAGRAPH:SetDesc(content)
+    end
+end
+
+local function HasPlayerMoved(): boolean
+    if not lastSpawnPosition then 
+        return false 
+    end
+    
+    local hrp = GetHRP()
+    if not hrp then 
+        return false 
+    end
+    
+    local currentPos = hrp.Position
+    local distance = (currentPos - lastSpawnPosition).Magnitude
+    
+    return distance > 50
+end
+
+local function SpawnTotemAtCurrentPosition(): boolean
+    local uuid: string? = GetTotemUUID(selectedTotemName)
     
     if not uuid then
+        UpdateTotemStatus("❌ Out of Stock", "No " .. selectedTotemName .. " found in inventory!")
         WindUI:Notify({
             Title = "Failed",
-            Content = "No " .. Vars.T.Name .. " available",
+            Content = "No " .. selectedTotemName .. " available",
             Duration = 5,
             Icon = "alert-triangle"
         })
         return false
     end
     
+    UpdateTotemStatus("🔧 Preparing...", "Clearing equipped items...")
     UnequipAllItems()
     task.wait(0.3)
     
+    UpdateTotemStatus("📦 Equipping...", "Equipping " .. selectedTotemName .. "...")
     pcall(function()
-        if Vars.R.EquipItem then
-            Vars.R.EquipItem:FireServer(uuid, "Totems")
+        if RE_EquipItem then
+            RE_EquipItem:FireServer(uuid, "Totems")
         end
     end)
     task.wait(0.5)
     
+    UpdateTotemStatus("🎯 Activating...", "Placing totem into hotbar slot 2...")
     pcall(function()
-        if Vars.R.EquipTool then
-            Vars.R.EquipTool:FireServer(2)
+        if RE_EquipToolFromHotbar then
+            RE_EquipToolFromHotbar:FireServer(2)
         end
     end)
     task.wait(0.8)
     
+    UpdateTotemStatus("✨ Spawning...", "Spawning " .. selectedTotemName .. "...")
     pcall(function() 
-        if Vars.R.SpawnTotem then
-            Vars.R.SpawnTotem:FireServer(uuid) 
+        if RE_SpawnTotem then
+            RE_SpawnTotem:FireServer(uuid) 
         end
     end)
     
-    Vars.T.Expiry = os.time() + Vars.Totems.Data[Vars.T.Name].Duration
+    local hrp = GetHRP()
+    if hrp then
+        lastSpawnPosition = hrp.Position
+    end
+    
+    currentTotemExpiry = os.time() + TOTEM_DATA[selectedTotemName].Duration
     
     task.spawn(function() 
         for i = 1, 3 do 
             task.wait(0.2) 
             pcall(function() 
-                if Vars.R.EquipTool then
-                    Vars.R.EquipTool:FireServer(1) 
+                if RE_EquipToolFromHotbar then
+                    RE_EquipToolFromHotbar:FireServer(1) 
                 end
             end) 
         end 
     end)
     
+    local spawnPos = lastSpawnPosition or Vector3.new(0,0,0)
     WindUI:Notify({
         Title = "Totem Spawned!",
-        Content = Vars.T.Name .. " placed successfully",
+        Content = string.format("%s placed at X:%.1f Y:%.1f Z:%.1f", 
+            selectedTotemName, spawnPos.X, spawnPos.Y, spawnPos.Z),
         Duration = 3,
         Icon = "check"
     })
@@ -194,76 +467,249 @@ local function SpawnTotem()
     return true
 end
 
-local function RunAutoTotemLoop()
-    if Vars.T.Thread then 
-        task.cancel(Vars.T.Thread) 
+local function RunAutoTotemLoop(): ()
+    if AUTO_TOTEM_THREAD then 
+        task.cancel(AUTO_TOTEM_THREAD) 
     end
     
-    Vars.T.Thread = task.spawn(function()
-        while Vars.T.Active do
-            local timeLeft = Vars.T.Expiry - os.time()
+    AUTO_TOTEM_THREAD = task.spawn(function()
+        local hrp = GetHRP()
+        if hrp then
+            local pos = hrp.Position
+            UpdateTotemStatus(
+                "🚀 Initializing...",
+                string.format("Preparing first spawn at: X:%.1f Y:%.1f Z:%.1f", pos.X, pos.Y, pos.Z)
+            )
+        end
+        
+        while AUTO_TOTEM_ACTIVE do
+            local timeLeft: number = currentTotemExpiry - os.time()
+            local hrp = GetHRP()
+            local currentPos = hrp and hrp.Position or Vector3.new(0,0,0)
             
-            if timeLeft <= 0 then
-                SpawnTotem()
-                if Vars.T.Active then
-                    task.wait(10)
+            if timeLeft > 0 then
+                local minutes: number = math.floor((timeLeft % 3600) / 60)
+                local seconds: number = math.floor(timeLeft % 60)
+                
+                if HasPlayerMoved() then
+                    UpdateTotemStatus(
+                        string.format("⏳ %s Active (Moved)", selectedTotemName),
+                        string.format("Next Spawn: %02d:%02d\n📍 New Position: X:%.1f Y:%.1f Z:%.1f\n⚠️ Totem will spawn here when timer ends!", 
+                            minutes, seconds, currentPos.X, currentPos.Y, currentPos.Z)
+                    )
+                else
+                    UpdateTotemStatus(
+                        string.format("⏳ %s Active", selectedTotemName),
+                        string.format("Next Spawn: %02d:%02d\n📍 Current: X:%.1f Y:%.1f Z:%.1f", 
+                            minutes, seconds, currentPos.X, currentPos.Y, currentPos.Z)
+                    )
                 end
             else
-                task.wait(1)
+                UpdateTotemStatus("🔍 Checking...", "Searching for " .. selectedTotemName .. " in inventory...")
+                
+                local spawnSuccess = SpawnTotemAtCurrentPosition()
+                
+                if not spawnSuccess then
+                    task.wait(10)
+                end
             end
+            
+            task.wait(1)
         end
     end)
 end
 
+-- =====================================================
+-- UI CREATION - FISHING TAB
+-- =====================================================
+local farm = Window:Tab({
+    Title = "Fishing",
+    Icon = "fish",
+    Locked = false,
+})
+
+local blatant = farm:Section({
+    Title = "Blatant Mode",
+    TextSize = 20,
+})
+
+local LoopIntervalInput = blatant:Input({
+    Title = "Blatant Interval",
+    Value = tostring(loopInterval),
+    Icon = "fast-forward",
+    Type = "Input",
+    Placeholder = "1.58",
+    Callback = function(input: string)
+        local newInterval: number? = tonumber(input)
+        if newInterval and newInterval >= 0.5 then 
+            loopInterval = newInterval 
+        end
+    end
+})
+
+local CompleteDelayInput = blatant:Input({
+    Title = "Complete Delay",
+    Value = tostring(completeDelay),
+    Icon = "loader",
+    Type = "Input",
+    Placeholder = "2.75",
+    Callback = function(input: string)
+        local newDelay: number? = tonumber(input)
+        if newDelay and newDelay >= 0.5 then 
+            completeDelay = newDelay 
+        end
+    end
+})
+
+local CancelDelayInput = blatant:Input({
+    Title = "Cancel Delay",
+    Value = tostring(cancelDelay),
+    Icon = "clock",
+    Type = "Input",
+    Placeholder = "0.3",
+    Callback = function(input: string)
+        local newDelay: number? = tonumber(input)
+        if newDelay and newDelay >= 0.1 then 
+            cancelDelay = newDelay 
+        end
+    end
+})
+
+local togblat = blatant:Toggle({
+    Title = "Instant Fishing (Blatant)",
+    Value = false,
+    Callback = function(state: boolean)
+        blatantInstantState = state
+        _G.PlengerHub_BlatantActive = state
+        
+        SuppressGameVisuals(state)
+        
+        if state then
+            if RF_UpdateAutoFishingState then
+                pcall(function() RF_UpdateAutoFishingState:InvokeServer(true) end)
+                task.wait(0.5)
+                pcall(function() RF_UpdateAutoFishingState:InvokeServer(true) end)
+                pcall(function() RF_UpdateAutoFishingState:InvokeServer(true) end)
+            end
+
+            blatantLoopThread = task.spawn(function()
+                while blatantInstantState do
+                    runBlatantInstant()
+                    task.wait(loopInterval)
+                end
+            end)
+
+            if blatantEquipThread then 
+                task.cancel(blatantEquipThread) 
+            end
+            
+            blatantEquipThread = task.spawn(function()
+                while blatantInstantState do
+                    pcall(function() 
+                        if RE_EquipToolFromHotbar then
+                            RE_EquipToolFromHotbar:FireServer(1) 
+                        end
+                    end)
+                    task.wait(0.1) 
+                end
+            end)
+            
+            WindUI:Notify({
+                Title = "Blatant Mode ON",
+                Duration = 3,
+                Icon = "zap"
+            })
+        else
+            if RF_UpdateAutoFishingState then
+                pcall(function() RF_UpdateAutoFishingState:InvokeServer(false) end)
+            end
+
+            if blatantLoopThread then 
+                task.cancel(blatantLoopThread) 
+                blatantLoopThread = nil 
+            end
+            
+            if blatantEquipThread then 
+                task.cancel(blatantEquipThread) 
+                blatantEquipThread = nil 
+            end
+            
+            WindUI:Notify({
+                Title = "Stopped",
+                Duration = 2
+            })
+        end
+    end
+})
+
+-- =====================================================
+-- UI CREATION - PREMIUM TAB
+-- =====================================================
 local premium = Window:Tab({
-    Title = "Auto Totem",
-    Icon = "solar:golf-bold",
+    Title = "Premium",
+    Icon = "star",
     IconColor = Color3.fromHex("#42f5b9"),
     IconShape = true,
+    Locked = false,
 })
 
 local totem = premium:Section({
-    Title = "Auto Spawn Totem"
+    Title = "Auto Spawn Totem",
+    TextSize = 20
 })
 
 premium:Divider()
 
+TOTEM_STATUS_PARAGRAPH = totem:Paragraph({
+    Title = "💤 Status: Idle",
+    Content = "Aktifkan toggle untuk spawn totem.\n\n✨ Timer tidak terpengaruh perpindahan tempat!\n📍 Totem spawn di posisi terbaru saat timer habis.",
+    Icon = "clock"
+})
+
 local choosetot = totem:Dropdown({
     Title = "Pilih Jenis Totem",
-    Values = Vars.Totems.Names,
-    Value = Vars.T.Name,
+    Values = TOTEM_NAMES,
+    Value = selectedTotemName,
     Multi = false,
-    Callback = function(name)
-        Vars.T.Name = name
-        Vars.T.Expiry = 0
+    Callback = function(name: string)
+        selectedTotemName = name
+        currentTotemExpiry = 0
+        lastSpawnPosition = nil
         
-        WindUI:Notify({
-            Title = "Totem Changed",
-            Content = "Switched to " .. name,
-            Duration = 2,
-            Icon = "info"
-        })
+        UpdateTotemStatus(
+            "🔄 Changed Target",
+            "Switched to " .. name .. "\nTimer reset."
+        )
     end
 })
 
 local togtot = totem:Toggle({
-    Title = "Enable Auto Totem",
-    Desc = "Auto spawn totem setiap 60 menit",
+    Title = "Enable Auto Totem (Smart)",
+    Desc = "Timer persistent + auto detect posisi baru",
     Value = false,
-    Callback = function(state)
-        Vars.T.Active = state
+    Callback = function(state: boolean)
+        AUTO_TOTEM_ACTIVE = state
         if state then
             RunAutoTotemLoop()
             WindUI:Notify({
                 Title = "Auto Totem Started",
+                Content = "Timer berjalan terus meskipun kamu pindah tempat!",
                 Duration = 3,
                 Icon = "play"
             })
         else
-            if Vars.T.Thread then 
-                task.cancel(Vars.T.Thread) 
-                Vars.T.Thread = nil
+            if AUTO_TOTEM_THREAD then 
+                task.cancel(AUTO_TOTEM_THREAD) 
+                AUTO_TOTEM_THREAD = nil
             end
+            
+            UpdateTotemStatus(
+                "⏹️ Stopped",
+                "Auto Totem telah dinonaktifkan.\nTimer direset."
+            )
+            
+            currentTotemExpiry = 0
+            lastSpawnPosition = nil
             
             WindUI:Notify({
                 Title = "Auto Totem Stopped",
@@ -275,9 +721,56 @@ local togtot = totem:Toggle({
 })
 
 totem:Button({
-    Title = "Manualy Spawn Totem",
+    Title = "Manual Spawn at Current Position",
     Icon = "zap",
+    Desc = "Spawn sekali + reset timer",
     Callback = function()
-        SpawnTotem()
+        local success = SpawnTotemAtCurrentPosition()
+        if success then
+            WindUI:Notify({
+                Title = "Manual Spawn Success",
+                Content = "Timer direset ke 60 menit",
+                Duration = 3,
+                Icon = "check"
+            })
+        end
     end
+})
+
+totem:Button({
+    Title = "Reset Timer",
+    Icon = "refresh-cw",
+    Desc = "Reset countdown tanpa spawn",
+    Callback = function()
+        currentTotemExpiry = 0
+        lastSpawnPosition = nil
+        
+        UpdateTotemStatus(
+            "🔄 Timer Reset",
+            "Timer di-reset. Siap spawn ulang!"
+        )
+        
+        WindUI:Notify({
+            Title = "Timer Reset",
+            Content = "Countdown direset ke 0",
+            Duration = 2,
+            Icon = "rotate-ccw"
+        })
+    end
+})
+
+-- =====================================================
+-- FINALIZATION
+-- =====================================================
+Window:Tag({
+    Title = "Lite V1.3",
+    Color = Color3.fromHex("#F5C527"),
+    Radius = 9,
+})
+
+WindUI:Notify({
+    Title = "Plenger Hub Lite V1.3 Loaded",
+    Content = "Smart Auto Totem Ready!",
+    Duration = 5,
+    Icon = "info"
 })
