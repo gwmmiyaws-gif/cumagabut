@@ -1,5 +1,5 @@
 --!strict
--- Plenger Hub Premium - Balanced Optimization
+-- Plenger Hub Premium V1.8 - Fixed Mutation List
 local WindUI
 
 do
@@ -13,6 +13,30 @@ do
         WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
     end
 end
+
+-- =================================================================
+-- DAFTAR MUTASI LENGKAP (18 MUTASI)
+-- =================================================================
+local MUTATION_LIST = {
+    "Shiny",
+    "Gemstone",
+    "Corrupt",
+    "Galaxy",
+    "Holographic",
+    "Ghost",
+    "Lightning",
+    "Fairy Dust",
+    "Gold",
+    "Midnight",
+    "Radioactive",
+    "Stone",
+    "Albino",
+    "Sandy",
+    "Acidic",
+    "Disco",
+    "Frozen",
+    "Noob"
+}
 
 -- Services
 local Players = game:GetService("Players")
@@ -262,7 +286,7 @@ local function GetItemsToFav()
         
         local match = false
         
-        -- Check rarity - FIXED
+        -- Check rarity
         if hasRarityFilter then
             for _, selRar in ipairs(selectedRarities) do
                 local selRarUpper = tostring(selRar):upper()
@@ -669,7 +693,7 @@ local itemNames = GetItemOptions()
 favSec:Dropdown({Title = "Filter by Name", Values = itemNames, Multi = true, AllowNone = true, Value = false,
     Callback = function(vals) selectedNames = vals or {} end})
 
-favSec:Dropdown({Title = "Filter by Mutation", Values = {"Shiny", "VariantId"}, Multi = true, AllowNone = true, Value = false,
+favSec:Dropdown({Title = "Filter by Mutation", Values = MUTATION_LIST, Multi = true, AllowNone = true, Value = false,
     Callback = function(vals) selectedMutations = vals or {} end})
 
 favTab:Divider()
@@ -771,5 +795,5 @@ totemSec:Button({Title = "Reset Timer", Icon = "refresh-cw", Desc = "Reset count
         WindUI:Notify({Title = "Timer Reset", Content = "Countdown reset to 0", Duration = 2, Icon = "rotate-ccw"})
     end})
 
-Window:Tag({Title = "Fixed V1.7", Color = Color3.fromHex("#F5C527"), Radius = 9})
-WindUI:Notify({Title = "Plenger Hub V1.7", Content = "All rarities fixed + Optimized!", Duration = 5, Icon = "info"})
+Window:Tag({Title = "V1.8 Final", Color = Color3.fromHex("#F5C527"), Radius = 9})
+WindUI:Notify({Title = "Plenger Hub V1.8", Content = "18 Mutations + All Features!", Duration = 5, Icon = "info"})
