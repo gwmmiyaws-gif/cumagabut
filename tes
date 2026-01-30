@@ -1,101 +1,26 @@
--- RockHub Premium - Blatant Fishing & Auto Totem Only
--- Universal Executor Support (Xeno, Solara, Wave, Fluxus, etc)
-
--- =====================================================
--- EXECUTOR COMPATIBILITY LAYER
--- =====================================================
-local function setupCompatibility()
-    -- Check Executor Functions
-    if not getgenv then
-        getgenv = function() return _G end
-    end
-    
-    if not setreadonly then
-        setreadonly = function(tbl, val)
-            pcall(function()
-                if val then
-                    table.freeze(tbl)
-                else
-                    -- No unfreeze equivalent in some executors
-                end
-            end)
-        end
-    end
-    
-    if not getrawmetatable then
-        warn("[RockHub] Executor doesn't support getrawmetatable - some features disabled")
-        return false
-    end
-    
-    if not newcclosure then
-        newcclosure = function(f) return f end
-    end
-    
-    if not checkcaller then
-        checkcaller = function() return false end
-    end
-    
-    if not getconnections then
-        warn("[RockHub] Executor doesn't support getconnections - Anti-AFK disabled")
-    end
-    
-    return true
-end
-
-local isCompatible = setupCompatibility()
-
--- =====================================================
--- LOAD UI LIBRARY
--- =====================================================
 local WindUI
-local loadSuccess, loadError = pcall(function()
-    WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
-end)
 
-if not loadSuccess then
-    warn("[RockHub] Failed to load UI:", loadError)
-    game.StarterGui:SetCore("SendNotification", {
-        Title = "RockHub Error";
-        Text = "Failed to load UI library";
-        Duration = 5;
-    })
-    return
+do
+    local ok, result = pcall(function()
+        return require("./src/Init")
+    end)
+    
+    if ok then
+        WindUI = result
+    else 
+        WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
+    end
 end
 
-local Window = WindUI:CreateWindow({
-    Title = "RockHub - Fish It (Lite)",
-    Icon = "rbxassetid://116236936447443",
-    Author = "Premium Version",
-    Folder = "RockHub",
-    Size = UDim2.fromOffset(600, 360),
-    MinSize = Vector2.new(560, 250),
-    MaxSize = Vector2.new(950, 760),
-    Transparent = true,
-    Theme = "Rose",
-    Resizable = true,
-    SideBarWidth = 190,
-    BackgroundImageTransparency = 0.42,
-    HideSearchBar = true,
-    ScrollBarEnabled = true,
-})
-
--- =====================================================
--- SERVICES & GLOBALS
--- =====================================================
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
-
 local LocalPlayer = Players.LocalPlayer
-local RPath = {"Packages", "_Index", "sleitnick_net@0.2.0", "net"}
 
--- =====================================================
--- HELPER FUNCTIONS
--- =====================================================
-local function GetRemote(remotePath, name, timeout)
+local RPath = {"Packages", "_Index", "sleitnick_net@0.2.0", "net"}
+local function GetRemote(remotePath, name)
     local currentInstance = ReplicatedStorage
     for _, childName in ipairs(remotePath) do
-        local child = currentInstance:WaitForChild(childName, timeout or 0.5)
+        local child = currentInstance:WaitForChild(childName, 0.5)
         if not child then 
             return nil 
         end
@@ -104,254 +29,62 @@ local function GetRemote(remotePath, name, timeout)
     return currentInstance:FindFirstChild(name)
 end
 
-local function GetHRP()
-    local Character = LocalPlayer.Character
-    if not Character then
-        Character = LocalPlayer.CharacterAdded:Wait()
-    end
-    return Character:WaitForChild("HumanoidRootPart", 5)
-end
-
-local function SafeFireServer(remote, ...)
-    if not remote then return false end
-    local success = pcall(function()
-        remote:FireServer(...)
-    end)
-    return success
-end
-
-local function SafeInvokeServer(remote, ...)
-    if not remote then return nil end
-    local success, result = pcall(function()
-        return remote:InvokeServer(...)
-    end)
-    return success and result or nil
-end
-
--- =====================================================
--- REMOTE DEFINITIONS
--- =====================================================
-local RE_EquipToolFromHotbar = GetRemote(RPath, "RE/EquipToolFromHotbar")
-local RF_ChargeFishingRod = GetRemote(RPath, "RF/ChargeFishingRod")
-local RF_RequestFishingMinigameStarted = GetRemote(RPath, "RF/RequestFishingMinigameStarted")
-local RE_FishingCompleted = GetRemote(RPath, "RE/FishingCompleted")
-local RF_CancelFishingInputs = GetRemote(RPath, "RF/CancelFishingInputs")
-local RF_UpdateAutoFishingState = GetRemote(RPath, "RF/UpdateAutoFishingState")
-local RE_SpawnTotem = GetRemote(RPath, "RE/SpawnTotem")
-local RE_EquipItem = GetRemote(RPath, "RE/EquipItem")
-local RE_UnequipItem = GetRemote(RPath, "RE/UnequipItem")
-
--- =====================================================
--- BLATANT FISHING VARIABLES
--- =====================================================
-local blatantInstantState = false
-local blatantLoopThread = nil
-local blatantEquipThread = nil
-
-local completeDelay = 3.055
-local cancelDelay = 0.3
-local loopInterval = 1.715
-
-getgenv().RockHub_BlatantActive = false
-
--- =====================================================
--- TOTEM VARIABLES
--- =====================================================
-local AUTO_TOTEM_ACTIVE = false
-local AUTO_TOTEM_THREAD = nil
-local selectedTotemName = "Luck Totem"
-local currentTotemExpiry = 0
-local lastSpawnPosition = nil
-
-local TOTEM_DATA = {
-    ["Luck Totem"] = {Id = 1, Duration = 3601},
-    ["Mutation Totem"] = {Id = 2, Duration = 3601},
-    ["Shiny Totem"] = {Id = 3, Duration = 3601}
+local Vars = {
+    R = {
+        EquipTool = GetRemote(RPath, "RE/EquipToolFromHotbar"),
+        SpawnTotem = GetRemote(RPath, "RE/SpawnTotem"),
+        EquipItem = GetRemote(RPath, "RE/EquipItem"),
+        UnequipItem = GetRemote(RPath, "RE/UnequipItem")
+    },
+    T = { 
+        Active = false,
+        Thread = nil,
+        Name = nil,
+        Expiry = 0
+    },
+    Totems = {
+        Data = {
+            ["Luck Totem"] = {Id = 1, Duration = 3601},
+            ["Mutation Totem"] = {Id = 2, Duration = 3601},
+            ["Shiny Totem"] = {Id = 3, Duration = 3601}
+        },
+        Names = {"Luck Totem", "Mutation Totem", "Shiny Totem"}
+    }
 }
 
-local TOTEM_NAMES = {"Luck Totem", "Mutation Totem", "Shiny Totem"}
-local TOTEM_STATUS_PARAGRAPH = nil
+local Window = WindUI:CreateWindow({
+    Title = "LS Hub - Fish It",
+    Author = "developed by Louissxe",
+    Folder = "LSHub-FishIt",
+    Icon = "rbxassetid://129609617845057",
+    Transparent = true,
+    IconSize = 12*2,
+    NewElements = true,
+    Size = UDim2.fromOffset(580, 380),
+    ToggleKey = Enum.KeyCode.G,
+    User = {
+        Enabled = true,
+        Anonymous = true,
+    },
+    HideSearchBar = false,
+    OpenButton = {
+        Title = "Open LS Hub",
+        CornerRadius = UDim.new(0.3,0),
+        StrokeThickness = 3,
+        Enabled = true,
+        Draggable = true,
+        OnlyMobile = false,
+        Color = ColorSequence.new(
+            Color3.fromRGB(107, 49, 255), 
+            Color3.fromRGB(215, 48, 221)
+        )
+    },
+    Topbar = {
+        Height = 44,
+        ButtonsType = "Default",
+    },
+})
 
--- =====================================================
--- ANTI-AFK (WITH COMPATIBILITY CHECK)
--- =====================================================
-if getconnections then
-    pcall(function()
-        local player = LocalPlayer
-        for _, v in pairs(getconnections(player.Idled)) do
-            if v.Disable then
-                v:Disable()
-                print("[RockHub Anti-AFK] ON")
-            end
-        end
-    end)
-else
-    warn("[RockHub] Anti-AFK disabled - executor doesn't support getconnections")
-end
-
--- =====================================================
--- BLATANT FISHING LOGIC
--- =====================================================
-
--- [1] CONTROLLER KILLER (WITH SAFETY CHECK)
-task.spawn(function()
-    local success, FishingController = pcall(function() 
-        return require(ReplicatedStorage.Controllers.FishingController) 
-    end)
-    
-    if success and FishingController then
-        local Old_Charge = FishingController.RequestChargeFishingRod
-        local Old_Cast = FishingController.SendFishingRequestToServer
-        
-        FishingController.RequestChargeFishingRod = function(...)
-            if getgenv().RockHub_BlatantActive then 
-                return 
-            end 
-            return Old_Charge(...)
-        end
-        
-        FishingController.SendFishingRequestToServer = function(...)
-            if getgenv().RockHub_BlatantActive then 
-                return false, "Blocked by RockHub" 
-            end
-            return Old_Cast(...)
-        end
-        
-        print("[RockHub] Controller hooks installed")
-    else
-        warn("[RockHub] Failed to hook FishingController - some features may not work")
-    end
-end)
-
--- [2] REMOTE KILLER (WITH COMPATIBILITY CHECK)
-if isCompatible and getrawmetatable then
-    local mt = getrawmetatable(game)
-    local old_namecall = mt.__namecall
-    
-    local success = pcall(function()
-        setreadonly(mt, false)
-        
-        mt.__namecall = newcclosure(function(self, ...)
-            local method = getnamecallmethod()
-            if getgenv().RockHub_BlatantActive and not checkcaller() then
-                if method == "InvokeServer" and (
-                    self.Name == "RequestFishingMinigameStarted" or 
-                    self.Name == "ChargeFishingRod" or 
-                    self.Name == "UpdateAutoFishingState"
-                ) then
-                    return nil 
-                end
-                if method == "FireServer" and self.Name == "FishingCompleted" then
-                    return nil
-                end
-            end
-            return old_namecall(self, ...)
-        end)
-        
-        setreadonly(mt, true)
-    end)
-    
-    if success then
-        print("[RockHub] Remote hooks installed")
-    else
-        warn("[RockHub] Failed to hook remotes - using fallback method")
-    end
-end
-
--- [3] UI SPOOF
-local function SuppressGameVisuals(active)
-    local success, TextController = pcall(function() 
-        return require(ReplicatedStorage.Controllers.TextNotificationController) 
-    end)
-    
-    if success and TextController then
-        if active then
-            if not TextController._OldDeliver then 
-                TextController._OldDeliver = TextController.DeliverNotification 
-            end
-            TextController.DeliverNotification = function(self, data)
-                if data and data.Text and (
-                    string.find(tostring(data.Text), "Auto Fishing") or 
-                    string.find(tostring(data.Text), "Reach Level")
-                ) then
-                    return 
-                end
-                return TextController._OldDeliver(self, data)
-            end
-        elseif TextController._OldDeliver then
-            TextController.DeliverNotification = TextController._OldDeliver
-            TextController._OldDeliver = nil
-        end
-    end
-
-    if active then
-        task.spawn(function()
-            local CollectionService = game:GetService("CollectionService")
-            local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
-            
-            local InactiveColor = ColorSequence.new({
-                ColorSequenceKeypoint.new(0, Color3.fromHex("ff5d60")), 
-                ColorSequenceKeypoint.new(1, Color3.fromHex("ff2256"))
-            })
-
-            while getgenv().RockHub_BlatantActive do
-                local targets = {}
-                
-                for _, btn in ipairs(CollectionService:GetTagged("AutoFishingButton")) do
-                    table.insert(targets, btn)
-                end
-                
-                if #targets == 0 then
-                    local btn = PlayerGui:FindFirstChild("Backpack") 
-                        and PlayerGui.Backpack:FindFirstChild("AutoFishingButton")
-                    if btn then 
-                        table.insert(targets, btn) 
-                    end
-                end
-
-                for _, btn in ipairs(targets) do
-                    local grad = btn:FindFirstChild("UIGradient")
-                    if grad then
-                        grad.Color = InactiveColor
-                    end
-                end
-                
-                RunService.RenderStepped:Wait()
-            end
-        end)
-    end
-end
-
--- [4] INSTANT FISH FUNCTION
-local function runBlatantInstant()
-    if not blatantInstantState then 
-        return 
-    end
-    
-    task.spawn(function()
-        local startTime = os.clock()
-        local timestamp = os.time() + os.clock()
-        
-        SafeInvokeServer(RF_ChargeFishingRod, timestamp)
-        task.wait(0.001)
-        
-        SafeInvokeServer(RF_RequestFishingMinigameStarted, -139.6379699707, 0.99647927980797)
-        
-        local completeWaitTime = completeDelay - (os.clock() - startTime)
-        if completeWaitTime > 0 then 
-            task.wait(completeWaitTime) 
-        end
-        
-        SafeFireServer(RE_FishingCompleted)
-        task.wait(cancelDelay)
-        
-        SafeInvokeServer(RF_CancelFishingInputs)
-    end)
-end
-
--- =====================================================
--- TOTEM LOGIC
--- =====================================================
 local function GetPlayerDataReplion()
     local ReplionModule = ReplicatedStorage:WaitForChild("Packages"):WaitForChild("Replion", 10)
     if not ReplionModule then 
@@ -373,7 +106,7 @@ local function GetTotemUUID(name)
     
     if success and inventoryData.Totems then 
         for _, item in ipairs(inventoryData.Totems) do 
-            if tonumber(item.Id) == TOTEM_DATA[name].Id and (item.Count or 1) >= 1 then 
+            if tonumber(item.Id) == Vars.Totems.Data[name].Id and (item.Count or 1) >= 1 then 
                 return item.UUID 
             end 
         end 
@@ -383,7 +116,7 @@ local function GetTotemUUID(name)
 end
 
 local function UnequipAllItems()
-    if not RE_UnequipItem then return end
+    if not Vars.R.UnequipItem then return end
     
     local replion = GetPlayerDataReplion()
     if replion then
@@ -393,86 +126,67 @@ local function UnequipAllItems()
         
         if success and equippedItems then
             for _, uuid in ipairs(equippedItems) do
-                SafeFireServer(RE_UnequipItem, uuid)
+                pcall(function() 
+                    Vars.R.UnequipItem:FireServer(uuid) 
+                end)
                 task.wait(0.05)
             end
         end
     end
 end
 
-local function UpdateTotemStatus(title, content)
-    if TOTEM_STATUS_PARAGRAPH then
-        pcall(function()
-            TOTEM_STATUS_PARAGRAPH:SetTitle(title)
-            TOTEM_STATUS_PARAGRAPH:SetDesc(content)
-        end)
-    end
-end
-
-local function HasPlayerMoved()
-    if not lastSpawnPosition then 
-        return false 
-    end
-    
-    local hrp = GetHRP()
-    if not hrp then 
-        return false 
-    end
-    
-    local currentPos = hrp.Position
-    local distance = (currentPos - lastSpawnPosition).Magnitude
-    
-    return distance > 50
-end
-
-local function SpawnTotemAtCurrentPosition()
-    local uuid = GetTotemUUID(selectedTotemName)
+local function SpawnTotem()
+    local uuid = GetTotemUUID(Vars.T.Name)
     
     if not uuid then
-        UpdateTotemStatus("❌ Out of Stock", "No " .. selectedTotemName .. " found in inventory!")
         WindUI:Notify({
             Title = "Failed",
-            Content = "No " .. selectedTotemName .. " available",
+            Content = "No " .. Vars.T.Name .. " available",
             Duration = 5,
             Icon = "alert-triangle"
         })
         return false
     end
     
-    UpdateTotemStatus("🔧 Preparing...", "Clearing equipped items...")
     UnequipAllItems()
     task.wait(0.3)
     
-    UpdateTotemStatus("📦 Equipping...", "Equipping " .. selectedTotemName .. "...")
-    SafeFireServer(RE_EquipItem, uuid, "Totems")
+    pcall(function()
+        if Vars.R.EquipItem then
+            Vars.R.EquipItem:FireServer(uuid, "Totems")
+        end
+    end)
     task.wait(0.5)
     
-    UpdateTotemStatus("🎯 Activating...", "Placing totem into hotbar slot 2...")
-    SafeFireServer(RE_EquipToolFromHotbar, 2)
+    pcall(function()
+        if Vars.R.EquipTool then
+            Vars.R.EquipTool:FireServer(2)
+        end
+    end)
     task.wait(0.8)
     
-    UpdateTotemStatus("✨ Spawning...", "Spawning " .. selectedTotemName .. "...")
-    SafeFireServer(RE_SpawnTotem, uuid)
+    pcall(function() 
+        if Vars.R.SpawnTotem then
+            Vars.R.SpawnTotem:FireServer(uuid) 
+        end
+    end)
     
-    local hrp = GetHRP()
-    if hrp then
-        lastSpawnPosition = hrp.Position
-    end
-    
-    currentTotemExpiry = os.time() + TOTEM_DATA[selectedTotemName].Duration
+    Vars.T.Expiry = os.time() + Vars.Totems.Data[Vars.T.Name].Duration
     
     task.spawn(function() 
         for i = 1, 3 do 
             task.wait(0.2) 
-            SafeFireServer(RE_EquipToolFromHotbar, 1)
+            pcall(function() 
+                if Vars.R.EquipTool then
+                    Vars.R.EquipTool:FireServer(1) 
+                end
+            end) 
         end 
     end)
     
-    local spawnPos = lastSpawnPosition or Vector3.new(0,0,0)
     WindUI:Notify({
         Title = "Totem Spawned!",
-        Content = string.format("%s placed at X:%.1f Y:%.1f Z:%.1f", 
-            selectedTotemName, spawnPos.X, spawnPos.Y, spawnPos.Z),
+        Content = Vars.T.Name .. " placed successfully",
         Duration = 3,
         Icon = "check"
     })
@@ -481,233 +195,75 @@ local function SpawnTotemAtCurrentPosition()
 end
 
 local function RunAutoTotemLoop()
-    if AUTO_TOTEM_THREAD then 
-        task.cancel(AUTO_TOTEM_THREAD) 
+    if Vars.T.Thread then 
+        task.cancel(Vars.T.Thread) 
     end
     
-    AUTO_TOTEM_THREAD = task.spawn(function()
-        local hrp = GetHRP()
-        if hrp then
-            local pos = hrp.Position
-            UpdateTotemStatus(
-                "🚀 Initializing...",
-                string.format("Preparing first spawn at: X:%.1f Y:%.1f Z:%.1f", pos.X, pos.Y, pos.Z)
-            )
-        end
-        
-        while AUTO_TOTEM_ACTIVE do
-            local timeLeft = currentTotemExpiry - os.time()
-            local hrp = GetHRP()
-            local currentPos = hrp and hrp.Position or Vector3.new(0,0,0)
+    Vars.T.Thread = task.spawn(function()
+        while Vars.T.Active do
+            local timeLeft = Vars.T.Expiry - os.time()
             
-            if timeLeft > 0 then
-                local minutes = math.floor((timeLeft % 3600) / 60)
-                local seconds = math.floor(timeLeft % 60)
-                
-                if HasPlayerMoved() then
-                    UpdateTotemStatus(
-                        string.format("⏳ %s Active (Moved)", selectedTotemName),
-                        string.format("Next Spawn: %02d:%02d\n📍 New Position: X:%.1f Y:%.1f Z:%.1f\n⚠️ Totem will spawn here when timer ends!", 
-                            minutes, seconds, currentPos.X, currentPos.Y, currentPos.Z)
-                    )
-                else
-                    UpdateTotemStatus(
-                        string.format("⏳ %s Active", selectedTotemName),
-                        string.format("Next Spawn: %02d:%02d\n📍 Current: X:%.1f Y:%.1f Z:%.1f", 
-                            minutes, seconds, currentPos.X, currentPos.Y, currentPos.Z)
-                    )
-                end
-            else
-                UpdateTotemStatus("🔍 Checking...", "Searching for " .. selectedTotemName .. " in inventory...")
-                
-                local spawnSuccess = SpawnTotemAtCurrentPosition()
-                
-                if not spawnSuccess then
+            if timeLeft <= 0 then
+                SpawnTotem()
+                if Vars.T.Active then
                     task.wait(10)
                 end
+            else
+                task.wait(1)
             end
-            
-            task.wait(1)
         end
     end)
 end
 
--- =====================================================
--- UI CREATION
--- =====================================================
-local farm = Window:Tab({
-    Title = "Fishing",
-    Icon = "fish",
-    Locked = false,
-})
-
-local blatant = farm:Section({
-    Title = "Blatant Mode",
-    TextSize = 20,
-})
-
-blatant:Input({
-    Title = "Blatant Interval",
-    Value = tostring(loopInterval),
-    Icon = "fast-forward",
-    Type = "Input",
-    Placeholder = "1.58",
-    Callback = function(input)
-        local newInterval = tonumber(input)
-        if newInterval and newInterval >= 0.5 then 
-            loopInterval = newInterval 
-        end
-    end
-})
-
-blatant:Input({
-    Title = "Complete Delay",
-    Value = tostring(completeDelay),
-    Icon = "loader",
-    Type = "Input",
-    Placeholder = "2.75",
-    Callback = function(input)
-        local newDelay = tonumber(input)
-        if newDelay and newDelay >= 0.5 then 
-            completeDelay = newDelay 
-        end
-    end
-})
-
-blatant:Input({
-    Title = "Cancel Delay",
-    Value = tostring(cancelDelay),
-    Icon = "clock",
-    Type = "Input",
-    Placeholder = "0.3",
-    Callback = function(input)
-        local newDelay = tonumber(input)
-        if newDelay and newDelay >= 0.1 then 
-            cancelDelay = newDelay 
-        end
-    end
-})
-
-blatant:Toggle({
-    Title = "Instant Fishing (Blatant)",
-    Value = false,
-    Callback = function(state)
-        blatantInstantState = state
-        getgenv().RockHub_BlatantActive = state
-        
-        SuppressGameVisuals(state)
-        
-        if state then
-            SafeInvokeServer(RF_UpdateAutoFishingState, true)
-            task.wait(0.5)
-            SafeInvokeServer(RF_UpdateAutoFishingState, true)
-            SafeInvokeServer(RF_UpdateAutoFishingState, true)
-
-            blatantLoopThread = task.spawn(function()
-                while blatantInstantState do
-                    runBlatantInstant()
-                    task.wait(loopInterval)
-                end
-            end)
-
-            if blatantEquipThread then 
-                task.cancel(blatantEquipThread) 
-            end
-            
-            blatantEquipThread = task.spawn(function()
-                while blatantInstantState do
-                    SafeFireServer(RE_EquipToolFromHotbar, 1)
-                    task.wait(0.1) 
-                end
-            end)
-            
-            WindUI:Notify({
-                Title = "Blatant Mode ON",
-                Duration = 3,
-                Icon = "zap"
-            })
-        else
-            SafeInvokeServer(RF_UpdateAutoFishingState, false)
-
-            if blatantLoopThread then 
-                task.cancel(blatantLoopThread) 
-                blatantLoopThread = nil 
-            end
-            
-            if blatantEquipThread then 
-                task.cancel(blatantEquipThread) 
-                blatantEquipThread = nil 
-            end
-            
-            WindUI:Notify({
-                Title = "Stopped",
-                Duration = 2
-            })
-        end
-    end
-})
-
 local premium = Window:Tab({
-    Title = "Premium",
-    Icon = "star",
-    Locked = false,
+    Title = "Webhook Settings",
+    Icon = "solar:golf-bold",
+    IconColor = Color3.fromHex("#42f5b9"),
+    IconShape = true,
 })
 
 local totem = premium:Section({
-    Title = "Auto Spawn Totem",
-    TextSize = 20
+    Title = "Auto Spawn Totem"
 })
 
-TOTEM_STATUS_PARAGRAPH = totem:Paragraph({
-    Title = "💤 Status: Idle",
-    Content = "Aktifkan toggle untuk spawn totem.\n\n✨ Timer tidak terpengaruh perpindahan tempat!\n📍 Totem spawn di posisi terbaru saat timer habis.",
-    Icon = "clock"
-})
+premium:Divider()
 
-totem:Dropdown({
+local choosetot = totem:Dropdown({
     Title = "Pilih Jenis Totem",
-    Values = TOTEM_NAMES,
-    Value = selectedTotemName,
+    Values = Vars.Totems.Names,
+    Value = Vars.T.Name,
     Multi = false,
     Callback = function(name)
-        selectedTotemName = name
-        currentTotemExpiry = 0
-        lastSpawnPosition = nil
+        Vars.T.Name = name
+        Vars.T.Expiry = 0
         
-        UpdateTotemStatus(
-            "🔄 Changed Target",
-            "Switched to " .. name .. "\nTimer reset."
-        )
+        WindUI:Notify({
+            Title = "Totem Changed",
+            Content = "Switched to " .. name,
+            Duration = 2,
+            Icon = "info"
+        })
     end
 })
 
-totem:Toggle({
-    Title = "Enable Auto Totem (Smart)",
-    Desc = "Timer persistent + auto detect posisi baru",
+local togtot = totem:Toggle({
+    Title = "Enable Auto Totem",
+    Desc = "Auto spawn totem setiap 60 menit",
     Value = false,
     Callback = function(state)
-        AUTO_TOTEM_ACTIVE = state
+        Vars.T.Active = state
         if state then
             RunAutoTotemLoop()
             WindUI:Notify({
                 Title = "Auto Totem Started",
-                Content = "Timer berjalan terus meskipun kamu pindah tempat!",
                 Duration = 3,
                 Icon = "play"
             })
         else
-            if AUTO_TOTEM_THREAD then 
-                task.cancel(AUTO_TOTEM_THREAD) 
-                AUTO_TOTEM_THREAD = nil
+            if Vars.T.Thread then 
+                task.cancel(Vars.T.Thread) 
+                Vars.T.Thread = nil
             end
-            
-            UpdateTotemStatus(
-                "⏹️ Stopped",
-                "Auto Totem telah dinonaktifkan.\nTimer direset."
-            )
-            
-            currentTotemExpiry = 0
-            lastSpawnPosition = nil
             
             WindUI:Notify({
                 Title = "Auto Totem Stopped",
@@ -719,72 +275,9 @@ totem:Toggle({
 })
 
 totem:Button({
-    Title = "Manual Spawn at Current Position",
+    Title = "Manualy Spawn Totem",
     Icon = "zap",
-    Desc = "Spawn sekali + reset timer",
     Callback = function()
-        local success = SpawnTotemAtCurrentPosition()
-        if success then
-            WindUI:Notify({
-                Title = "Manual Spawn Success",
-                Content = "Timer direset ke 60 menit",
-                Duration = 3,
-                Icon = "check"
-            })
-        end
+        SpawnTotem()
     end
 })
-
-totem:Button({
-    Title = "Reset Timer",
-    Icon = "refresh-cw",
-    Desc = "Reset countdown tanpa spawn",
-    Callback = function()
-        currentTotemExpiry = 0
-        lastSpawnPosition = nil
-        
-        UpdateTotemStatus(
-            "🔄 Timer Reset",
-            "Timer di-reset. Siap spawn ulang!"
-        )
-        
-        WindUI:Notify({
-            Title = "Timer Reset",
-            Content = "Countdown direset ke 0",
-            Duration = 2,
-            Icon = "rotate-ccw"
-        })
-    end
-})
-
--- =====================================================
--- FINALIZATION
--- =====================================================
-Window:Tag({
-    Title = "Universal v1.4",
-    Color = Color3.fromHex("#F5C527"),
-    Radius = 9,
-})
-
-Window:EditOpenButton({
-    Title = "RockHub - Fish It",
-    Icon = "rbxassetid://116236936447443",
-    CornerRadius = UDim.new(0, 30),
-    StrokeThickness = 1.5,
-    Color = ColorSequence.new(
-        Color3.fromHex("FF0F7B"),
-        Color3.fromHex("F89B29")
-    ),
-    OnlyMobile = false,
-    Enabled = true,
-    Draggable = true,
-})
-
-WindUI:Notify({
-    Title = "RockHub Universal Loaded",
-    Content = "Support: Xeno, Solara, Wave, Fluxus & More!",
-    Duration = 5,
-    Icon = "info"
-})
-
-print("[RockHub] Loaded successfully on " .. (identifyexecutor and identifyexecutor() or "Unknown Executor"))
