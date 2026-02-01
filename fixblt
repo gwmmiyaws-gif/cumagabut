@@ -1,249 +1,451 @@
--- NETWORK SPY: Lihat Remote Apa yang Dipanggil Pas Fishing
+local WindUI
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+do
+    local ok, result = pcall(function()
+        return require("./src/Init")
+    end)
+    
+    if ok then
+        WindUI = result
+    else 
+        WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
+    end
+end
+
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 
--- Buat GUI Spy
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "NetworkSpy"
-ScreenGui.Parent = game.CoreGui
-ScreenGui.ResetOnSpawn = false
-
-local Frame = Instance.new("Frame")
-Frame.Size = UDim2.new(0, 700, 0, 500)
-Frame.Position = UDim2.new(0.5, -350, 0.5, -250)
-Frame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-Frame.BorderSizePixel = 2
-Frame.BorderColor3 = Color3.fromRGB(255, 0, 100)
-Frame.Active = true
-Frame.Draggable = true
-Frame.Parent = ScreenGui
-
-local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, 0, 0, 40)
-Title.BackgroundColor3 = Color3.fromRGB(255, 0, 100)
-Title.Text = "🕵️ NETWORK SPY - Fishing Tracker"
-Title.Font = Enum.Font.GothamBold
-Title.TextSize = 16
-Title.TextColor3 = Color3.new(1,1,1)
-Title.Parent = Frame
-
-local InfoLabel = Instance.new("TextLabel")
-InfoLabel.Size = UDim2.new(1, -20, 0, 60)
-InfoLabel.Position = UDim2.new(0, 10, 0, 45)
-InfoLabel.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-InfoLabel.BorderSizePixel = 1
-InfoLabel.BorderColor3 = Color3.fromRGB(100, 100, 100)
-InfoLabel.Font = Enum.Font.Code
-InfoLabel.TextSize = 11
-InfoLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
-InfoLabel.Text = "INSTRUCTIONS:\n1. SEKARANG FISHING MANUAL (cast, reel, catch)\n2. Semua remote calls akan tercatat di bawah\n3. Copy log dan kirim ke saya!"
-InfoLabel.TextWrapped = true
-InfoLabel.TextYAlignment = Enum.TextYAlignment.Top
-InfoLabel.Parent = Frame
-
-local ScrollFrame = Instance.new("ScrollingFrame")
-ScrollFrame.Size = UDim2.new(1, -20, 1, -230)
-ScrollFrame.Position = UDim2.new(0, 10, 0, 115)
-ScrollFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-ScrollFrame.BorderSizePixel = 1
-ScrollFrame.BorderColor3 = Color3.fromRGB(60, 60, 60)
-ScrollFrame.ScrollBarThickness = 10
-ScrollFrame.Parent = Frame
-
-local LogContainer = Instance.new("Frame")
-LogContainer.Size = UDim2.new(1, -10, 0, 0)
-LogContainer.BackgroundTransparency = 1
-LogContainer.AutomaticSize = Enum.AutomaticSize.Y
-LogContainer.Parent = ScrollFrame
-
-local ListLayout = Instance.new("UIListLayout")
-ListLayout.Padding = UDim.new(0, 3)
-ListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-ListLayout.Parent = LogContainer
-
-ListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-    ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, ListLayout.AbsoluteContentSize.Y + 10)
-end)
-
-local CopyBtn = Instance.new("TextButton")
-CopyBtn.Size = UDim2.new(0.48, -5, 0, 45)
-CopyBtn.Position = UDim2.new(0, 10, 1, -55)
-CopyBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 100)
-CopyBtn.Text = "📋 COPY ALL"
-CopyBtn.Font = Enum.Font.GothamBold
-CopyBtn.TextSize = 14
-CopyBtn.TextColor3 = Color3.new(1,1,1)
-CopyBtn.Parent = Frame
-
-local ClearBtn = Instance.new("TextButton")
-ClearBtn.Size = UDim2.new(0.48, -5, 0, 45)
-ClearBtn.Position = UDim2.new(0.52, 0, 1, -55)
-ClearBtn.BackgroundColor3 = Color3.fromRGB(200, 100, 0)
-ClearBtn.Text = "🗑️ CLEAR"
-ClearBtn.Font = Enum.Font.GothamBold
-ClearBtn.TextSize = 14
-ClearBtn.TextColor3 = Color3.new(1,1,1)
-ClearBtn.Parent = Frame
-
-local CloseBtn = Instance.new("TextButton")
-CloseBtn.Size = UDim2.new(0, 40, 0, 40)
-CloseBtn.Position = UDim2.new(1, -40, 0, 0)
-CloseBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-CloseBtn.Text = "X"
-CloseBtn.Font = Enum.Font.GothamBold
-CloseBtn.TextSize = 18
-CloseBtn.TextColor3 = Color3.new(1,1,1)
-CloseBtn.Parent = Frame
-
--- Storage
-local allLogs = {}
-local eventCount = 0
-
-local function AddLog(text, color)
-    eventCount = eventCount + 1
-    local timestamp = os.date("%H:%M:%S")
-    local fullText = string.format("[%d] [%s] %s", eventCount, timestamp, text)
-    
-    table.insert(allLogs, fullText)
-    
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, -10, 0, 0)
-    label.BackgroundTransparency = 1
-    label.Text = fullText
-    label.Font = Enum.Font.Code
-    label.TextSize = 10
-    label.TextColor3 = color or Color3.fromRGB(200, 200, 200)
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.TextYAlignment = Enum.TextYAlignment.Top
-    label.TextWrapped = true
-    label.AutomaticSize = Enum.AutomaticSize.Y
-    label.Parent = LogContainer
-    
-    print(fullText)
-    
-    task.wait()
-    ScrollFrame.CanvasPosition = Vector2.new(0, ScrollFrame.AbsoluteCanvasSize.Y)
-end
-
--- Copy Button
-CopyBtn.MouseButton1Click:Connect(function()
-    local fullLog = table.concat(allLogs, "\n")
-    setclipboard(fullLog)
-    
-    CopyBtn.Text = "✅ COPIED!"
-    CopyBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
-    task.wait(1.5)
-    CopyBtn.Text = "📋 COPY ALL"
-    CopyBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 100)
-end)
-
--- Clear Button
-ClearBtn.MouseButton1Click:Connect(function()
-    allLogs = {}
-    eventCount = 0
-    for _, child in pairs(LogContainer:GetChildren()) do
-        if child:IsA("TextLabel") then
-            child:Destroy()
-        end
-    end
-    AddLog("=== LOG CLEARED ===", Color3.fromRGB(255, 255, 0))
-end)
-
--- Close Button
-CloseBtn.MouseButton1Click:Connect(function()
-    ScreenGui:Destroy()
-end)
-
--- ============================================================
--- HOOK REMOTES
--- ============================================================
-
-AddLog("=== NETWORK SPY STARTED ===", Color3.fromRGB(0, 255, 255))
-AddLog("Sekarang FISHING MANUAL, semua network calls akan tercatat!", Color3.fromRGB(255, 255, 0))
-AddLog("", Color3.new(1,1,1))
-
--- Find Remote Folder
 local RPath = {"Packages", "_Index", "sleitnick_net@0.2.0", "net"}
-local currentInstance = ReplicatedStorage
-
-for _, childName in ipairs(RPath) do
-    currentInstance = currentInstance:WaitForChild(childName, 5)
-    if not currentInstance then 
-        AddLog("❌ Path not found: " .. childName, Color3.fromRGB(255, 100, 100))
-        return 
+local function GetRemote(remotePath, name)
+    local currentInstance = ReplicatedStorage
+    for _, childName in ipairs(remotePath) do
+        local child = currentInstance:WaitForChild(childName, 0.5)
+        if not child then 
+            return nil 
+        end
+        currentInstance = child
     end
+    return currentInstance:FindFirstChild(name)
 end
 
-AddLog("✅ Remote folder found: " .. currentInstance:GetFullName(), Color3.fromRGB(100, 255, 100))
-AddLog("", Color3.new(1,1,1))
+local Vars = {
+    R = {
+        EquipTool = GetRemote(RPath, "RE/EquipToolFromHotbar"),
+        SpawnTotem = GetRemote(RPath, "RE/SpawnTotem"),
+        EquipItem = GetRemote(RPath, "RE/EquipItem"),
+        UnequipItem = GetRemote(RPath, "RE/UnequipItem")
+    },
+    T = { 
+        Active = false,
+        Thread = nil,
+        Name = nil,
+        Expiry = 0
+    },
+    Totems = {
+        Data = {
+            ["Luck Totem"] = {Id = 1, Duration = 3601},
+            ["Mutation Totem"] = {Id = 2, Duration = 3601},
+            ["Shiny Totem"] = {Id = 3, Duration = 3601}
+        },
+        Names = {"Luck Totem", "Mutation Totem", "Shiny Totem"}
+    }
+}
 
--- Hook All RemoteEvents
-local function HookRemoteEvent(remote)
-    remote.OnClientEvent:Connect(function(...)
-        local args = {...}
-        local argsStr = ""
-        
-        for i, arg in ipairs(args) do
-            if type(arg) == "table" then
-                argsStr = argsStr .. "Table"
-            else
-                argsStr = argsStr .. tostring(arg)
+-- Blatant Beta Variables
+local BlatantConfig = {
+    Active = false,
+    CancelDelay = 1.6,
+    CompleteDelay = 0.37
+}
+
+local BlatantRemotes = {
+    ChargeFishingRod = nil,
+    RequestFishingMinigameStarted = nil,
+    FishingCompleted = nil,
+    EquipToolFromHotbar = nil,
+    CancelFishingInputs = nil
+}
+
+-- Initialize Blatant Remotes
+pcall(function()
+    local net = ReplicatedStorage:WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild("sleitnick_net@0.2.0"):WaitForChild("net")
+    BlatantRemotes.ChargeFishingRod = net:WaitForChild("RF/ChargeFishingRod")
+    BlatantRemotes.RequestFishingMinigameStarted = net:WaitForChild("RF/RequestFishingMinigameStarted")
+    BlatantRemotes.FishingCompleted = net:WaitForChild("RE/FishingCompleted")
+    BlatantRemotes.EquipToolFromHotbar = net:WaitForChild("RE/EquipToolFromHotbar")
+    BlatantRemotes.CancelFishingInputs = net:WaitForChild("RF/CancelFishingInputs")
+end)
+
+local BlatantMainThread = nil
+local BlatantEquipThread = nil
+
+local function BlatantFishingCycle()
+    task.spawn(function()
+        pcall(function()
+            local success, result = BlatantRemotes.CancelFishingInputs:InvokeServer()
+            if not success then
+                while not success do
+                    local retry = BlatantRemotes.CancelFishingInputs:InvokeServer()
+                    if retry then break end
+                    task.wait(0.05)
+                end
             end
-            if i < #args then argsStr = argsStr .. ", " end
+            local chargeSuccess, chargeResult = BlatantRemotes.ChargeFishingRod:InvokeServer(math.huge)
+            if not chargeSuccess then
+                while not chargeSuccess do
+                    local retryCharge = BlatantRemotes.ChargeFishingRod:InvokeServer(math.huge)
+                    if retryCharge then break end
+                    task.wait(0.05)
+                end
+            end
+            BlatantRemotes.RequestFishingMinigameStarted:InvokeServer(-139.63, 0.996)
+        end)
+    end)
+    task.spawn(function()
+        task.wait(BlatantConfig.CompleteDelay)
+        if BlatantConfig.Active then
+            pcall(BlatantRemotes.FishingCompleted.FireServer, BlatantRemotes.FishingCompleted)
         end
-        
-        AddLog("🔵 RE " .. remote.Name .. " | Args: " .. (argsStr ~= "" and argsStr or "None"), Color3.fromRGB(100, 200, 255))
     end)
 end
 
--- Hook All RemoteFunctions (InvokeServer tracking)
-local originalNamecall
-originalNamecall = hookmetamethod(game, "__namecall", function(self, ...)
-    local method = getnamecallmethod()
-    local args = {...}
-    
-    if method == "InvokeServer" and self:IsA("RemoteFunction") then
-        local argsStr = ""
-        for i, arg in ipairs(args) do
-            if type(arg) == "table" then
-                argsStr = argsStr .. "Table"
-            else
-                argsStr = argsStr .. tostring(arg)
-            end
-            if i < #args then argsStr = argsStr .. ", " end
+local function StartBlatantFishing()
+    BlatantEquipThread = task.spawn(function()
+        while BlatantConfig.Active do
+            pcall(BlatantRemotes.EquipToolFromHotbar.FireServer, BlatantRemotes.EquipToolFromHotbar, 1)
+            task.wait(1.5)
         end
-        
-        AddLog("🟢 RF " .. self.Name .. " | Args: " .. (argsStr ~= "" and argsStr or "None"), Color3.fromRGB(100, 255, 100))
-    elseif method == "FireServer" and self:IsA("RemoteEvent") then
-        local argsStr = ""
-        for i, arg in ipairs(args) do
-            if type(arg) == "table" then
-                argsStr = argsStr .. "Table"
-            else
-                argsStr = argsStr .. tostring(arg)
-            end
-            if i < #args then argsStr = argsStr .. ", " end
-        end
-        
-        AddLog("🔴 RE " .. self.Name .. " | Args: " .. (argsStr ~= "" and argsStr or "None"), Color3.fromRGB(255, 150, 100))
-    end
+    end)
     
-    return originalNamecall(self, ...)
-end)
-
--- Hook incoming events
-for _, remote in pairs(currentInstance:GetDescendants()) do
-    if remote:IsA("RemoteEvent") then
-        HookRemoteEvent(remote)
+    while BlatantConfig.Active do
+        BlatantFishingCycle()
+        task.wait(BlatantConfig.CancelDelay)
+        if not BlatantConfig.Active then break end
+        task.wait(0.1)
     end
 end
 
-AddLog("✅ Hooks installed! Start fishing manually now!", Color3.fromRGB(0, 255, 0))
-AddLog("Legend:", Color3.fromRGB(200, 200, 200))
-AddLog("  🔴 RE = YOU called RemoteEvent:FireServer()", Color3.fromRGB(255, 150, 100))
-AddLog("  🟢 RF = YOU called RemoteFunction:InvokeServer()", Color3.fromRGB(100, 255, 100))
-AddLog("  🔵 RE = SERVER sent you RemoteEvent", Color3.fromRGB(100, 200, 255))
+local function ToggleBlatantFishing(state)
+    BlatantConfig.Active = state
+    if state then
+        if BlatantMainThread then task.cancel(BlatantMainThread) end
+        if BlatantEquipThread then task.cancel(BlatantEquipThread) end
+        BlatantMainThread = task.spawn(StartBlatantFishing)
+    else
+        if BlatantMainThread then task.cancel(BlatantMainThread) end
+        if BlatantEquipThread then task.cancel(BlatantEquipThread) end
+        BlatantMainThread = nil
+        BlatantEquipThread = nil
+        pcall(BlatantRemotes.CancelFishingInputs.InvokeServer, BlatantRemotes.CancelFishingInputs)
+    end
+end
 
-print("🕵️ Network Spy active! Manual fishing dimulai!")
+local Window = WindUI:CreateWindow({
+    Title = "LS Hub - Fish It",
+    Author = "developed by Louissxe",
+    Folder = "LSHub-FishIt",
+    Icon = "rbxassetid://129609617845057",
+    Transparent = true,
+    IconSize = 12*2,
+    NewElements = true,
+    Size = UDim2.fromOffset(580, 380),
+    ToggleKey = Enum.KeyCode.G,
+    User = {
+        Enabled = true,
+        Anonymous = true,
+    },
+    HideSearchBar = false,
+    OpenButton = {
+        Title = "Open LS Hub",
+        CornerRadius = UDim.new(0.3,0),
+        StrokeThickness = 3,
+        Enabled = true,
+        Draggable = true,
+        OnlyMobile = false,
+        Color = ColorSequence.new(
+            Color3.fromRGB(107, 49, 255), 
+            Color3.fromRGB(215, 48, 221)
+        )
+    },
+    Topbar = {
+        Height = 44,
+        ButtonsType = "Default",
+    },
+})
+
+local function GetPlayerDataReplion()
+    local ReplionModule = ReplicatedStorage:WaitForChild("Packages"):WaitForChild("Replion", 10)
+    if not ReplionModule then 
+        return nil 
+    end
+    local ReplionClient = require(ReplionModule).Client
+    return ReplionClient:WaitReplion("Data", 5)
+end
+
+local function GetTotemUUID(name)
+    local replion = GetPlayerDataReplion()
+    if not replion then 
+        return nil 
+    end
+    
+    local success, inventoryData = pcall(function() 
+        return replion:GetExpect("Inventory") 
+    end)
+    
+    if success and inventoryData.Totems then 
+        for _, item in ipairs(inventoryData.Totems) do 
+            if tonumber(item.Id) == Vars.Totems.Data[name].Id and (item.Count or 1) >= 1 then 
+                return item.UUID 
+            end 
+        end 
+    end
+    
+    return nil
+end
+
+local function UnequipAllItems()
+    if not Vars.R.UnequipItem then return end
+    
+    local replion = GetPlayerDataReplion()
+    if replion then
+        local success, equippedItems = pcall(function() 
+            return replion:GetExpect("EquippedItems") 
+        end)
+        
+        if success and equippedItems then
+            for _, uuid in ipairs(equippedItems) do
+                pcall(function() 
+                    Vars.R.UnequipItem:FireServer(uuid) 
+                end)
+                task.wait(0.05)
+            end
+        end
+    end
+end
+
+local function SpawnTotem()
+    local uuid = GetTotemUUID(Vars.T.Name)
+    
+    if not uuid then
+        WindUI:Notify({
+            Title = "Failed",
+            Content = "No " .. Vars.T.Name .. " available",
+            Duration = 5,
+            Icon = "alert-triangle"
+        })
+        return false
+    end
+    
+    UnequipAllItems()
+    task.wait(0.3)
+    
+    pcall(function()
+        if Vars.R.EquipItem then
+            Vars.R.EquipItem:FireServer(uuid, "Totems")
+        end
+    end)
+    task.wait(0.5)
+    
+    pcall(function()
+        if Vars.R.EquipTool then
+            Vars.R.EquipTool:FireServer(2)
+        end
+    end)
+    task.wait(0.8)
+    
+    pcall(function() 
+        if Vars.R.SpawnTotem then
+            Vars.R.SpawnTotem:FireServer(uuid) 
+        end
+    end)
+    
+    Vars.T.Expiry = os.time() + Vars.Totems.Data[Vars.T.Name].Duration
+    
+    task.spawn(function() 
+        for i = 1, 3 do 
+            task.wait(0.2) 
+            pcall(function() 
+                if Vars.R.EquipTool then
+                    Vars.R.EquipTool:FireServer(1) 
+                end
+            end) 
+        end 
+    end)
+    
+    WindUI:Notify({
+        Title = "Totem Spawned!",
+        Content = Vars.T.Name .. " placed successfully",
+        Duration = 3,
+        Icon = "check"
+    })
+    
+    return true
+end
+
+local function RunAutoTotemLoop()
+    if Vars.T.Thread then 
+        task.cancel(Vars.T.Thread) 
+    end
+    
+    Vars.T.Thread = task.spawn(function()
+        while Vars.T.Active do
+            local timeLeft = Vars.T.Expiry - os.time()
+            
+            if timeLeft <= 0 then
+                SpawnTotem()
+                if Vars.T.Active then
+                    task.wait(10)
+                end
+            else
+                task.wait(1)
+            end
+        end
+    end)
+end
+
+-- TAB FISHING (BLATANT BETA)
+local fishing = Window:Tab({
+    Title = "Fishing",
+    Icon = "fish",
+    IconColor = Color3.fromHex("#00ff88"),
+    IconShape = true,
+})
+
+local blatant = fishing:Section({
+    Title = "Blatant Beta",
+    Icon = "zap",
+    TextXAlignment = "Left",
+    TextSize = 17
+})
+
+fishing:Divider()
+
+blatant:Toggle({
+    Title = "Blatant Beta",
+    Desc = "Automated fishing system (experimental)",
+    Value = BlatantConfig.Active,
+    Callback = function(state)
+        ToggleBlatantFishing(state)
+        
+        if state then
+            WindUI:Notify({
+                Title = "Blatant Beta Enabled",
+                Content = "Auto fishing started",
+                Duration = 3,
+                Icon = "check"
+            })
+        else
+            WindUI:Notify({
+                Title = "Blatant Beta Disabled",
+                Content = "Auto fishing stopped",
+                Duration = 3,
+                Icon = "x"
+            })
+        end
+    end
+})
+
+blatant:Input({
+    Title = "Cancel Delay",
+    Placeholder = "1.6",
+    Default = tostring(BlatantConfig.CancelDelay),
+    Callback = function(value)
+        local num = tonumber(value)
+        if num and num > 0 then
+            BlatantConfig.CancelDelay = num
+            WindUI:Notify({
+                Title = "Delay Updated",
+                Content = "Cancel delay set to " .. num,
+                Duration = 2,
+                Icon = "info"
+            })
+        end
+    end
+})
+
+blatant:Input({
+    Title = "Complete Delay",
+    Placeholder = "0.37",
+    Default = tostring(BlatantConfig.CompleteDelay),
+    Callback = function(value)
+        local num = tonumber(value)
+        if num and num > 0 then
+            BlatantConfig.CompleteDelay = num + 0.5
+            WindUI:Notify({
+                Title = "Delay Updated",
+                Content = "Complete delay set to " .. (num + 0.5),
+                Duration = 2,
+                Icon = "info"
+            })
+        end
+    end
+})
+
+-- TAB PREMIUM (TOTEM)
+local premium = Window:Tab({
+    Title = "Webhook Settings",
+    Icon = "solar:golf-bold",
+    IconColor = Color3.fromHex("#42f5b9"),
+    IconShape = true,
+})
+
+local totem = premium:Section({
+    Title = "Auto Spawn Totem"
+})
+
+premium:Divider()
+
+local choosetot = totem:Dropdown({
+    Title = "Pilih Jenis Totem",
+    Values = Vars.Totems.Names,
+    Value = Vars.T.Name,
+    Multi = false,
+    Callback = function(name)
+        Vars.T.Name = name
+        Vars.T.Expiry = 0
+        
+        WindUI:Notify({
+            Title = "Totem Changed",
+            Content = "Switched to " .. name,
+            Duration = 2,
+            Icon = "info"
+        })
+    end
+})
+
+local togtot = totem:Toggle({
+    Title = "Enable Auto Totem",
+    Desc = "Auto spawn totem setiap 60 menit",
+    Value = false,
+    Callback = function(state)
+        Vars.T.Active = state
+        if state then
+            RunAutoTotemLoop()
+            WindUI:Notify({
+                Title = "Auto Totem Started",
+                Duration = 3,
+                Icon = "play"
+            })
+        else
+            if Vars.T.Thread then 
+                task.cancel(Vars.T.Thread) 
+                Vars.T.Thread = nil
+            end
+            
+            WindUI:Notify({
+                Title = "Auto Totem Stopped",
+                Duration = 2,
+                Icon = "square"
+            })
+        end
+    end
+})
+
+totem:Button({
+    Title = "Manualy Spawn Totem",
+    Icon = "zap",
+    Callback = function()
+        SpawnTotem()
+    end
+})
