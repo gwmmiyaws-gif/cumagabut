@@ -1,244 +1,249 @@
--- DEBUG SCANNER: Cek Kenapa Rod Ga Ke-detect
+-- NETWORK SPY: Lihat Remote Apa yang Dipanggil Pas Fishing
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 
--- Buat GUI Debug
+-- Buat GUI Spy
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "DebugScanner"
+ScreenGui.Name = "NetworkSpy"
 ScreenGui.Parent = game.CoreGui
+ScreenGui.ResetOnSpawn = false
 
 local Frame = Instance.new("Frame")
-Frame.Size = UDim2.new(0, 500, 0, 600)
-Frame.Position = UDim2.new(0.5, -250, 0.5, -300)
-Frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+Frame.Size = UDim2.new(0, 700, 0, 500)
+Frame.Position = UDim2.new(0.5, -350, 0.5, -250)
+Frame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 Frame.BorderSizePixel = 2
-Frame.BorderColor3 = Color3.fromRGB(0, 200, 255)
+Frame.BorderColor3 = Color3.fromRGB(255, 0, 100)
+Frame.Active = true
+Frame.Draggable = true
 Frame.Parent = ScreenGui
 
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 40)
-Title.BackgroundColor3 = Color3.fromRGB(0, 150, 200)
-Title.Text = "🔍 DEBUG SCANNER"
+Title.BackgroundColor3 = Color3.fromRGB(255, 0, 100)
+Title.Text = "🕵️ NETWORK SPY - Fishing Tracker"
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 16
 Title.TextColor3 = Color3.new(1,1,1)
 Title.Parent = Frame
 
+local InfoLabel = Instance.new("TextLabel")
+InfoLabel.Size = UDim2.new(1, -20, 0, 60)
+InfoLabel.Position = UDim2.new(0, 10, 0, 45)
+InfoLabel.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+InfoLabel.BorderSizePixel = 1
+InfoLabel.BorderColor3 = Color3.fromRGB(100, 100, 100)
+InfoLabel.Font = Enum.Font.Code
+InfoLabel.TextSize = 11
+InfoLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
+InfoLabel.Text = "INSTRUCTIONS:\n1. SEKARANG FISHING MANUAL (cast, reel, catch)\n2. Semua remote calls akan tercatat di bawah\n3. Copy log dan kirim ke saya!"
+InfoLabel.TextWrapped = true
+InfoLabel.TextYAlignment = Enum.TextYAlignment.Top
+InfoLabel.Parent = Frame
+
 local ScrollFrame = Instance.new("ScrollingFrame")
-ScrollFrame.Size = UDim2.new(1, -20, 1, -90)
-ScrollFrame.Position = UDim2.new(0, 10, 0, 50)
-ScrollFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-ScrollFrame.BorderSizePixel = 0
-ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-ScrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+ScrollFrame.Size = UDim2.new(1, -20, 1, -230)
+ScrollFrame.Position = UDim2.new(0, 10, 0, 115)
+ScrollFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+ScrollFrame.BorderSizePixel = 1
+ScrollFrame.BorderColor3 = Color3.fromRGB(60, 60, 60)
+ScrollFrame.ScrollBarThickness = 10
 ScrollFrame.Parent = Frame
 
+local LogContainer = Instance.new("Frame")
+LogContainer.Size = UDim2.new(1, -10, 0, 0)
+LogContainer.BackgroundTransparency = 1
+LogContainer.AutomaticSize = Enum.AutomaticSize.Y
+LogContainer.Parent = ScrollFrame
+
+local ListLayout = Instance.new("UIListLayout")
+ListLayout.Padding = UDim.new(0, 3)
+ListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+ListLayout.Parent = LogContainer
+
+ListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, ListLayout.AbsoluteContentSize.Y + 10)
+end)
+
+local CopyBtn = Instance.new("TextButton")
+CopyBtn.Size = UDim2.new(0.48, -5, 0, 45)
+CopyBtn.Position = UDim2.new(0, 10, 1, -55)
+CopyBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 100)
+CopyBtn.Text = "📋 COPY ALL"
+CopyBtn.Font = Enum.Font.GothamBold
+CopyBtn.TextSize = 14
+CopyBtn.TextColor3 = Color3.new(1,1,1)
+CopyBtn.Parent = Frame
+
+local ClearBtn = Instance.new("TextButton")
+ClearBtn.Size = UDim2.new(0.48, -5, 0, 45)
+ClearBtn.Position = UDim2.new(0.52, 0, 1, -55)
+ClearBtn.BackgroundColor3 = Color3.fromRGB(200, 100, 0)
+ClearBtn.Text = "🗑️ CLEAR"
+ClearBtn.Font = Enum.Font.GothamBold
+ClearBtn.TextSize = 14
+ClearBtn.TextColor3 = Color3.new(1,1,1)
+ClearBtn.Parent = Frame
+
 local CloseBtn = Instance.new("TextButton")
-CloseBtn.Size = UDim2.new(1, -20, 0, 35)
-CloseBtn.Position = UDim2.new(0, 10, 1, -45)
+CloseBtn.Size = UDim2.new(0, 40, 0, 40)
+CloseBtn.Position = UDim2.new(1, -40, 0, 0)
 CloseBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-CloseBtn.Text = "CLOSE"
+CloseBtn.Text = "X"
 CloseBtn.Font = Enum.Font.GothamBold
-CloseBtn.TextSize = 14
+CloseBtn.TextSize = 18
 CloseBtn.TextColor3 = Color3.new(1,1,1)
 CloseBtn.Parent = Frame
 
-CloseBtn.MouseButton1Click:Connect(function()
-    ScreenGui:Destroy()
-end)
+-- Storage
+local allLogs = {}
+local eventCount = 0
 
 local function AddLog(text, color)
+    eventCount = eventCount + 1
+    local timestamp = os.date("%H:%M:%S")
+    local fullText = string.format("[%d] [%s] %s", eventCount, timestamp, text)
+    
+    table.insert(allLogs, fullText)
+    
     local label = Instance.new("TextLabel")
     label.Size = UDim2.new(1, -10, 0, 0)
     label.BackgroundTransparency = 1
-    label.Text = text
+    label.Text = fullText
     label.Font = Enum.Font.Code
     label.TextSize = 10
-    label.TextColor3 = color or Color3.new(1, 1, 1)
+    label.TextColor3 = color or Color3.fromRGB(200, 200, 200)
     label.TextXAlignment = Enum.TextXAlignment.Left
     label.TextYAlignment = Enum.TextYAlignment.Top
     label.TextWrapped = true
     label.AutomaticSize = Enum.AutomaticSize.Y
-    label.Parent = ScrollFrame
+    label.Parent = LogContainer
     
-    print(text)
+    print(fullText)
+    
+    task.wait()
+    ScrollFrame.CanvasPosition = Vector2.new(0, ScrollFrame.AbsoluteCanvasSize.Y)
 end
 
--- ============================================================
--- SCAN 1: CHARACTER & TOOLS
--- ============================================================
-AddLog("=== SCAN 1: CHARACTER & TOOLS ===", Color3.fromRGB(0, 255, 255))
-
-local char = LocalPlayer.Character
-if not char then
-    AddLog("❌ Character: NOT FOUND", Color3.fromRGB(255, 100, 100))
-else
-    AddLog("✅ Character: " .. char.Name, Color3.fromRGB(100, 255, 100))
+-- Copy Button
+CopyBtn.MouseButton1Click:Connect(function()
+    local fullLog = table.concat(allLogs, "\n")
+    setclipboard(fullLog)
     
-    -- Cek Equipped Tool
-    local equippedTool = char:FindFirstChildOfClass("Tool")
-    if equippedTool then
-        AddLog("✅ Equipped Tool: " .. equippedTool.Name, Color3.fromRGB(100, 255, 100))
-    else
-        AddLog("❌ Equipped Tool: NONE", Color3.fromRGB(255, 200, 100))
-    end
-    
-    -- List ALL children di character
-    AddLog("\n--- Character Children: ---", Color3.fromRGB(200, 200, 200))
-    for _, child in pairs(char:GetChildren()) do
-        AddLog("  - " .. child.ClassName .. ": " .. child.Name, Color3.new(0.8, 0.8, 0.8))
-    end
-end
+    CopyBtn.Text = "✅ COPIED!"
+    CopyBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+    task.wait(1.5)
+    CopyBtn.Text = "📋 COPY ALL"
+    CopyBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 100)
+end)
 
--- ============================================================
--- SCAN 2: BACKPACK
--- ============================================================
-AddLog("\n=== SCAN 2: BACKPACK ===", Color3.fromRGB(0, 255, 255))
-
-local backpack = LocalPlayer:FindFirstChild("Backpack")
-if not backpack then
-    AddLog("❌ Backpack: NOT FOUND", Color3.fromRGB(255, 100, 100))
-else
-    AddLog("✅ Backpack Found", Color3.fromRGB(100, 255, 100))
-    
-    local toolCount = 0
-    for _, tool in pairs(backpack:GetChildren()) do
-        if tool:IsA("Tool") then
-            toolCount = toolCount + 1
-            AddLog("  🔧 Tool #" .. toolCount .. ": " .. tool.Name, Color3.fromRGB(255, 255, 100))
+-- Clear Button
+ClearBtn.MouseButton1Click:Connect(function()
+    allLogs = {}
+    eventCount = 0
+    for _, child in pairs(LogContainer:GetChildren()) do
+        if child:IsA("TextLabel") then
+            child:Destroy()
         end
     end
-    
-    if toolCount == 0 then
-        AddLog("⚠️ No Tools in Backpack", Color3.fromRGB(255, 200, 100))
-    end
-end
+    AddLog("=== LOG CLEARED ===", Color3.fromRGB(255, 255, 0))
+end)
+
+-- Close Button
+CloseBtn.MouseButton1Click:Connect(function()
+    ScreenGui:Destroy()
+end)
 
 -- ============================================================
--- SCAN 3: REMOTES
+-- HOOK REMOTES
 -- ============================================================
-AddLog("\n=== SCAN 3: REMOTES ===", Color3.fromRGB(0, 255, 255))
 
+AddLog("=== NETWORK SPY STARTED ===", Color3.fromRGB(0, 255, 255))
+AddLog("Sekarang FISHING MANUAL, semua network calls akan tercatat!", Color3.fromRGB(255, 255, 0))
+AddLog("", Color3.new(1,1,1))
+
+-- Find Remote Folder
 local RPath = {"Packages", "_Index", "sleitnick_net@0.2.0", "net"}
-local RepStorage = game:GetService("ReplicatedStorage")
+local currentInstance = ReplicatedStorage
 
-local function GetRemote(remotePath, name)
-    local currentInstance = RepStorage
-    for _, childName in ipairs(remotePath) do
-        currentInstance = currentInstance:WaitForChild(childName, 1)
-        if not currentInstance then return nil end
-    end
-    return currentInstance:FindFirstChild(name)
-end
-
-local remotes = {
-    "RE/EquipToolFromHotbar",
-    "RF/ChargeFishingRod",
-    "RF/RequestFishingMinigameStarted",
-    "RF/CancelFishingInputs",
-    "RE/FishCaught",
-    "RE/FishingMinigameChanged",
-    "RE/BaitDestroyed"
-}
-
-for _, remoteName in ipairs(remotes) do
-    local remote = GetRemote(RPath, remoteName)
-    if remote then
-        AddLog("✅ " .. remoteName, Color3.fromRGB(100, 255, 100))
-    else
-        AddLog("❌ " .. remoteName .. " (NOT FOUND)", Color3.fromRGB(255, 100, 100))
+for _, childName in ipairs(RPath) do
+    currentInstance = currentInstance:WaitForChild(childName, 5)
+    if not currentInstance then 
+        AddLog("❌ Path not found: " .. childName, Color3.fromRGB(255, 100, 100))
+        return 
     end
 end
 
--- ============================================================
--- SCAN 4: TEST EQUIP REMOTE
--- ============================================================
-AddLog("\n=== SCAN 4: TEST EQUIP REMOTE ===", Color3.fromRGB(0, 255, 255))
+AddLog("✅ Remote folder found: " .. currentInstance:GetFullName(), Color3.fromRGB(100, 255, 100))
+AddLog("", Color3.new(1,1,1))
 
-local RE_EquipToolFromHotbar = GetRemote(RPath, "RE/EquipToolFromHotbar")
-
-if not RE_EquipToolFromHotbar then
-    AddLog("❌ EquipToolFromHotbar remote TIDAK DITEMUKAN!", Color3.fromRGB(255, 50, 50))
-else
-    AddLog("✅ Remote ditemukan, mencoba equip slot 1...", Color3.fromRGB(100, 255, 100))
-    
-    local success, err = pcall(function()
-        RE_EquipToolFromHotbar:FireServer(1)
-    end)
-    
-    if success then
-        AddLog("✅ FireServer(1) BERHASIL dipanggil", Color3.fromRGB(100, 255, 100))
+-- Hook All RemoteEvents
+local function HookRemoteEvent(remote)
+    remote.OnClientEvent:Connect(function(...)
+        local args = {...}
+        local argsStr = ""
         
-        task.wait(0.5)
-        
-        -- Cek ulang apakah ada perubahan
-        local charAfter = LocalPlayer.Character
-        if charAfter then
-            local toolAfter = charAfter:FindFirstChildOfClass("Tool")
-            if toolAfter then
-                AddLog("✅ SUKSES! Tool sekarang equipped: " .. toolAfter.Name, Color3.fromRGB(0, 255, 0))
+        for i, arg in ipairs(args) do
+            if type(arg) == "table" then
+                argsStr = argsStr .. "Table"
             else
-                AddLog("⚠️ Remote dipanggil, tapi tool BELUM muncul di Character", Color3.fromRGB(255, 200, 100))
-                AddLog("   Kemungkinan: Slot 1 kosong, atau butuh delay lebih lama", Color3.fromRGB(200, 200, 200))
+                argsStr = argsStr .. tostring(arg)
             end
+            if i < #args then argsStr = argsStr .. ", " end
         end
-    else
-        AddLog("❌ ERROR saat FireServer: " .. tostring(err), Color3.fromRGB(255, 50, 50))
-    end
-end
-
--- ============================================================
--- SCAN 5: REPLION DATA (Inventory Check)
--- ============================================================
-AddLog("\n=== SCAN 5: REPLION INVENTORY ===", Color3.fromRGB(0, 255, 255))
-
-local function GetPlayerDataReplion()
-    local ReplionModule = RepStorage:WaitForChild("Packages"):WaitForChild("Replion", 5)
-    if not ReplionModule then return nil end
-    local ReplionClient = require(ReplionModule).Client
-    return ReplionClient:WaitReplion("Data", 5)
-end
-
-local replion = GetPlayerDataReplion()
-if not replion then
-    AddLog("❌ Replion Data: NOT FOUND", Color3.fromRGB(255, 100, 100))
-else
-    AddLog("✅ Replion Data ditemukan", Color3.fromRGB(100, 255, 100))
-    
-    local success, inventoryData = pcall(function() 
-        return replion:GetExpect("Inventory") 
-    end)
-    
-    if success and inventoryData then
-        AddLog("✅ Inventory Data loaded", Color3.fromRGB(100, 255, 100))
         
-        if inventoryData["Fishing Rods"] then
-            AddLog("\n--- Fishing Rods di Inventory: ---", Color3.fromRGB(200, 200, 200))
-            local rodCount = 0
-            for _, rod in ipairs(inventoryData["Fishing Rods"]) do
-                rodCount = rodCount + 1
-                local uuid = rod.UUID or "No UUID"
-                local id = rod.Id or "No ID"
-                AddLog("  🎣 Rod #" .. rodCount .. ": ID=" .. id .. " | UUID=" .. uuid, Color3.fromRGB(255, 255, 100))
+        AddLog("🔵 RE " .. remote.Name .. " | Args: " .. (argsStr ~= "" and argsStr or "None"), Color3.fromRGB(100, 200, 255))
+    end)
+end
+
+-- Hook All RemoteFunctions (InvokeServer tracking)
+local originalNamecall
+originalNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+    local method = getnamecallmethod()
+    local args = {...}
+    
+    if method == "InvokeServer" and self:IsA("RemoteFunction") then
+        local argsStr = ""
+        for i, arg in ipairs(args) do
+            if type(arg) == "table" then
+                argsStr = argsStr .. "Table"
+            else
+                argsStr = argsStr .. tostring(arg)
             end
-            
-            if rodCount == 0 then
-                AddLog("⚠️ TIDAK ADA ROD DI INVENTORY!", Color3.fromRGB(255, 100, 100))
-            end
-        else
-            AddLog("❌ Key 'Fishing Rods' TIDAK ADA di Inventory", Color3.fromRGB(255, 100, 100))
+            if i < #args then argsStr = argsStr .. ", " end
         end
-    else
-        AddLog("❌ Gagal load Inventory: " .. tostring(inventoryData), Color3.fromRGB(255, 100, 100))
+        
+        AddLog("🟢 RF " .. self.Name .. " | Args: " .. (argsStr ~= "" and argsStr or "None"), Color3.fromRGB(100, 255, 100))
+    elseif method == "FireServer" and self:IsA("RemoteEvent") then
+        local argsStr = ""
+        for i, arg in ipairs(args) do
+            if type(arg) == "table" then
+                argsStr = argsStr .. "Table"
+            else
+                argsStr = argsStr .. tostring(arg)
+            end
+            if i < #args then argsStr = argsStr .. ", " end
+        end
+        
+        AddLog("🔴 RE " .. self.Name .. " | Args: " .. (argsStr ~= "" and argsStr or "None"), Color3.fromRGB(255, 150, 100))
+    end
+    
+    return originalNamecall(self, ...)
+end)
+
+-- Hook incoming events
+for _, remote in pairs(currentInstance:GetDescendants()) do
+    if remote:IsA("RemoteEvent") then
+        HookRemoteEvent(remote)
     end
 end
 
--- ============================================================
--- SUMMARY
--- ============================================================
-AddLog("\n=== SUMMARY ===", Color3.fromRGB(255, 255, 0))
-AddLog("Kalau di atas ada ❌, screenshot dan kirim ke saya!", Color3.fromRGB(255, 255, 255))
-AddLog("Terutama bagian 'SCAN 4' dan 'SCAN 5'", Color3.fromRGB(200, 200, 200))
+AddLog("✅ Hooks installed! Start fishing manually now!", Color3.fromRGB(0, 255, 0))
+AddLog("Legend:", Color3.fromRGB(200, 200, 200))
+AddLog("  🔴 RE = YOU called RemoteEvent:FireServer()", Color3.fromRGB(255, 150, 100))
+AddLog("  🟢 RF = YOU called RemoteFunction:InvokeServer()", Color3.fromRGB(100, 255, 100))
+AddLog("  🔵 RE = SERVER sent you RemoteEvent", Color3.fromRGB(100, 200, 255))
 
-print("=== DEBUG SCAN SELESAI ===")
+print("🕵️ Network Spy active! Manual fishing dimulai!")
