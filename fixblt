@@ -17,168 +17,348 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 
--- Blatant Beta Variables (Ultra Fast)
+-- Blatant Beta Variables (Robust & Reliable)
 local BlatantConfig = {
     Active = false,
-    CastDelay = 0.4,          -- Delay antar cast (SUPER CEPAT)
-    CompleteDelay = 0.15,     -- Delay sebelum complete (INSTANT)
-    EquipInterval = 1.2,      -- Interval equip rod
-    MultiCast = true,         -- Cast multiple times
-    CastPerCycle = 3,         -- Berapa kali cast per cycle
-    UseParallel = true,       -- Parallel execution
+    Mode = "Balanced", -- Safe, Balanced, Fast
+    CycleDelay = 1.8,
+    CatchDelay = 0.4,
+    ChargeWait = 0.1,
+    ThrowWait = 0.15,
+    SafetyBuffer = 0.05,
 }
 
-local BlatantRemotes = {
-    ChargeFishingRod = nil,
-    RequestFishingMinigameStarted = nil,
-    FishingCompleted = nil,
-    EquipToolFromHotbar = nil,
-    CancelFishingInputs = nil
+local ModePresets = {
+    Safe = {
+        CycleDelay = 2.5,
+        CatchDelay = 0.6,
+        ChargeWait = 0.15,
+        ThrowWait = 0.2,
+        SafetyBuffer = 0.1
+    },
+    Balanced = {
+        CycleDelay = 1.8,
+        CatchDelay = 0.4,
+        ChargeWait = 0.1,
+        ThrowWait = 0.15,
+        SafetyBuffer = 0.05
+    },
+    Fast = {
+        CycleDelay = 1.3,
+        CatchDelay = 0.3,
+        ChargeWait = 0.08,
+        ThrowWait = 0.12,
+        SafetyBuffer = 0.03
+    }
+}
+
+local BlatantRemotes = {}
+local BlatantThreads = {
+    Main = nil,
+    Equip = nil,
+    Monitor = nil
 }
 
 local BlatantStats = {
-    TotalCatches = 0,
+    TotalAttempts = 0,
+    SuccessfulCatches = 0,
+    FailedCatches = 0,
     SessionStart = 0,
-    CatchesPerMinute = 0
+    LastSuccess = 0,
+    ConsecutiveFails = 0
 }
 
--- Initialize Blatant Remotes
+-- Initialize Remotes dengan validation
 local function InitRemotes()
-    pcall(function()
-        local net = ReplicatedStorage:WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild("sleitnick_net@0.2.0"):WaitForChild("net")
-        BlatantRemotes.ChargeFishingRod = net:WaitForChild("RF/ChargeFishingRod")
-        BlatantRemotes.RequestFishingMinigameStarted = net:WaitForChild("RF/RequestFishingMinigameStarted")
-        BlatantRemotes.FishingCompleted = net:WaitForChild("RE/FishingCompleted")
-        BlatantRemotes.EquipToolFromHotbar = net:WaitForChild("RE/EquipToolFromHotbar")
-        BlatantRemotes.CancelFishingInputs = net:WaitForChild("RF/CancelFishingInputs")
-    end)
-end
-
-InitRemotes()
-
-local BlatantMainThread = nil
-local BlatantEquipThread = nil
-
--- Ultra Fast Single Cast
-local function FastCast()
-    task.spawn(function()
-        pcall(function()
-            -- Cancel & Charge secara parallel
-            BlatantRemotes.CancelFishingInputs:InvokeServer()
-            BlatantRemotes.ChargeFishingRod:InvokeServer(math.huge)
-            BlatantRemotes.RequestFishingMinigameStarted:InvokeServer(-139.63, 0.996)
-        end)
+    local success = pcall(function()
+        local net = ReplicatedStorage:WaitForChild("Packages", 5)
+            :WaitForChild("_Index", 5)
+            :WaitForChild("sleitnick_net@0.2.0", 5)
+            :WaitForChild("net", 5)
+        
+        BlatantRemotes.Cancel = net:WaitForChild("RF/CancelFishingInputs", 5)
+        BlatantRemotes.Charge = net:WaitForChild("RF/ChargeFishingRod", 5)
+        BlatantRemotes.Throw = net:WaitForChild("RF/RequestFishingMinigameStarted", 5)
+        BlatantRemotes.Complete = net:WaitForChild("RE/FishingCompleted", 5)
+        BlatantRemotes.Equip = net:WaitForChild("RE/EquipToolFromHotbar", 5)
     end)
     
-    -- Complete setelah delay minimal
-    task.spawn(function()
-        task.wait(BlatantConfig.CompleteDelay)
-        if BlatantConfig.Active then
-            pcall(function()
-                BlatantRemotes.FishingCompleted:FireServer()
-                BlatantStats.TotalCatches += 1
-            end)
-        end
-    end)
+    return success
 end
 
--- Multi-Cast System (Cast beberapa kali sekaligus)
-local function MultiCastCycle()
-    if BlatantConfig.MultiCast then
-        -- Cast multiple times dengan delay minimal
-        for i = 1, BlatantConfig.CastPerCycle do
-            if not BlatantConfig.Active then break end
-            FastCast()
-            task.wait(0.05) -- Delay minimal antar cast
+-- Validate remotes exist
+local function ValidateRemotes()
+    return BlatantRemotes.Cancel 
+        and BlatantRemotes.Charge 
+        and BlatantRemotes.Throw 
+        and BlatantRemotes.Complete 
+        and BlatantRemotes.Equip
+end
+
+-- Safe remote call dengan proper error handling
+local function SafeCall(func, ...)
+    local success, result = pcall(func, ...)
+    return success, result
+end
+
+-- Equip rod dengan validation
+local function EquipRod()
+    if not BlatantRemotes.Equip then return false end
+    
+    local equipped = false
+    for attempt = 1, 3 do
+        local success = SafeCall(function()
+            BlatantRemotes.Equip:FireServer(1)
+        end)
+        
+        if success then
+            equipped = true
+            break
         end
+        task.wait(0.1)
+    end
+    
+    return equipped
+end
+
+-- Cancel fishing dengan validation
+local function CancelFishing()
+    if not BlatantRemotes.Cancel then return false end
+    
+    local cancelled = false
+    for attempt = 1, 3 do
+        local success, result = SafeCall(function()
+            return BlatantRemotes.Cancel:InvokeServer()
+        end)
+        
+        if success and result then
+            cancelled = true
+            break
+        end
+        task.wait(0.05)
+    end
+    
+    return cancelled
+end
+
+-- Charge rod dengan validation
+local function ChargeRod()
+    if not BlatantRemotes.Charge then return false end
+    
+    local charged = false
+    for attempt = 1, 3 do
+        local success, result = SafeCall(function()
+            return BlatantRemotes.Charge:InvokeServer(math.huge)
+        end)
+        
+        if success and result then
+            charged = true
+            break
+        end
+        task.wait(0.05)
+    end
+    
+    return charged
+end
+
+-- Throw line dengan validation
+local function ThrowLine()
+    if not BlatantRemotes.Throw then return false end
+    
+    local thrown = false
+    for attempt = 1, 3 do
+        local success, result = SafeCall(function()
+            return BlatantRemotes.Throw:InvokeServer(-139.63, 0.996)
+        end)
+        
+        if success and result then
+            thrown = true
+            break
+        end
+        task.wait(0.05)
+    end
+    
+    return thrown
+end
+
+-- Complete catch dengan validation
+local function CompleteCatch()
+    if not BlatantRemotes.Complete then return false end
+    
+    local completed = false
+    local success = SafeCall(function()
+        BlatantRemotes.Complete:FireServer()
+    end)
+    
+    if success then
+        completed = true
+        BlatantStats.SuccessfulCatches += 1
+        BlatantStats.LastSuccess = os.time()
+        BlatantStats.ConsecutiveFails = 0
     else
-        FastCast()
-    end
-end
-
--- Parallel Casting (Multiple casts sekaligus)
-local function ParallelCast()
-    local threads = {}
-    
-    for i = 1, BlatantConfig.CastPerCycle do
-        threads[i] = task.spawn(function()
-            task.wait((i-1) * 0.03) -- Stagger delay
-            FastCast()
-        end)
+        BlatantStats.FailedCatches += 1
+        BlatantStats.ConsecutiveFails += 1
     end
     
-    -- Wait untuk semua complete
-    task.wait(BlatantConfig.CompleteDelay + 0.1)
+    return completed
 end
 
--- Auto Equip Rod (Background)
-local function AutoEquipRod()
+-- Main fishing cycle dengan proper sequencing
+local function FishingCycle()
+    BlatantStats.TotalAttempts += 1
+    
+    -- Step 1: Cancel previous
+    if not CancelFishing() then
+        return false
+    end
+    task.wait(BlatantConfig.SafetyBuffer)
+    
+    -- Step 2: Charge rod
+    if not ChargeRod() then
+        return false
+    end
+    task.wait(BlatantConfig.ChargeWait)
+    
+    -- Step 3: Throw line
+    if not ThrowLine() then
+        return false
+    end
+    task.wait(BlatantConfig.ThrowWait)
+    
+    -- Step 4: Wait for catch window
+    task.wait(BlatantConfig.CatchDelay)
+    
+    -- Step 5: Complete catch
+    if not BlatantConfig.Active then return false end
+    
+    return CompleteCatch()
+end
+
+-- Auto equip thread
+local function AutoEquipLoop()
     while BlatantConfig.Active do
-        pcall(function()
-            BlatantRemotes.EquipToolFromHotbar:FireServer(1)
-        end)
-        task.wait(BlatantConfig.EquipInterval)
+        EquipRod()
+        task.wait(2)
     end
 end
 
--- Main Fishing Loop (Ultra Fast)
+-- Monitor thread untuk detect issues
+local function MonitorLoop()
+    while BlatantConfig.Active do
+        task.wait(5)
+        
+        -- Check consecutive fails
+        if BlatantStats.ConsecutiveFails >= 10 then
+            WindUI:Notify({
+                Title = "⚠️ Warning",
+                Content = "10 consecutive fails detected. Check settings!",
+                Duration = 5,
+                Icon = "alert-triangle"
+            })
+            BlatantStats.ConsecutiveFails = 0
+        end
+        
+        -- Check if remotes still valid
+        if not ValidateRemotes() then
+            WindUI:Notify({
+                Title = "❌ Error",
+                Content = "Remotes disconnected! Stopping...",
+                Duration = 5,
+                Icon = "x"
+            })
+            ToggleBlatantFishing(false)
+            break
+        end
+    end
+end
+
+-- Main loop
 local function StartBlatantFishing()
-    BlatantStats.SessionStart = os.time()
-    BlatantStats.TotalCatches = 0
+    -- Validate remotes first
+    if not ValidateRemotes() then
+        WindUI:Notify({
+            Title = "❌ Error",
+            Content = "Failed to initialize remotes!",
+            Duration = 5,
+            Icon = "x"
+        })
+        return
+    end
     
-    -- Start equip thread
-    BlatantEquipThread = task.spawn(AutoEquipRod)
+    -- Reset stats
+    BlatantStats.SessionStart = os.time()
+    BlatantStats.TotalAttempts = 0
+    BlatantStats.SuccessfulCatches = 0
+    BlatantStats.FailedCatches = 0
+    BlatantStats.ConsecutiveFails = 0
+    
+    -- Start support threads
+    BlatantThreads.Equip = task.spawn(AutoEquipLoop)
+    BlatantThreads.Monitor = task.spawn(MonitorLoop)
     
     -- Initial equip
-    task.wait(0.2)
-    pcall(function()
-        BlatantRemotes.EquipToolFromHotbar:FireServer(1)
-    end)
     task.wait(0.3)
+    EquipRod()
+    task.wait(0.5)
     
-    -- Main ultra-fast loop
+    -- Main loop
     while BlatantConfig.Active do
-        if BlatantConfig.UseParallel then
-            -- Parallel execution (FASTEST)
-            ParallelCast()
+        local success = FishingCycle()
+        
+        -- Adaptive delay based on success
+        if success then
+            task.wait(BlatantConfig.CycleDelay)
         else
-            -- Sequential multi-cast
-            MultiCastCycle()
-        end
-        
-        -- Minimal delay antar cycle
-        task.wait(BlatantConfig.CastDelay)
-        
-        -- Update CPM (Catches Per Minute)
-        local elapsed = os.time() - BlatantStats.SessionStart
-        if elapsed > 0 then
-            BlatantStats.CatchesPerMinute = math.floor((BlatantStats.TotalCatches / elapsed) * 60)
+            -- If failed, wait a bit longer
+            task.wait(BlatantConfig.CycleDelay + 0.3)
         end
     end
 end
 
+-- Toggle function
 local function ToggleBlatantFishing(state)
     BlatantConfig.Active = state
     
     if state then
         -- Cancel existing threads
-        if BlatantMainThread then task.cancel(BlatantMainThread) end
-        if BlatantEquipThread then task.cancel(BlatantEquipThread) end
+        for _, thread in pairs(BlatantThreads) do
+            if thread then 
+                task.cancel(thread) 
+            end
+        end
         
         -- Start new thread
-        BlatantMainThread = task.spawn(StartBlatantFishing)
+        BlatantThreads.Main = task.spawn(StartBlatantFishing)
     else
-        -- Stop threads
-        if BlatantMainThread then task.cancel(BlatantMainThread) end
-        if BlatantEquipThread then task.cancel(BlatantEquipThread) end
-        BlatantMainThread = nil
-        BlatantEquipThread = nil
+        -- Stop all threads
+        for key, thread in pairs(BlatantThreads) do
+            if thread then 
+                task.cancel(thread)
+                BlatantThreads[key] = nil
+            end
+        end
         
         -- Cancel fishing
-        pcall(function()
-            BlatantRemotes.CancelFishingInputs:InvokeServer()
-        end)
+        CancelFishing()
     end
+end
+
+-- Apply mode preset
+local function ApplyMode(mode)
+    local preset = ModePresets[mode]
+    if preset then
+        BlatantConfig.Mode = mode
+        BlatantConfig.CycleDelay = preset.CycleDelay
+        BlatantConfig.CatchDelay = preset.CatchDelay
+        BlatantConfig.ChargeWait = preset.ChargeWait
+        BlatantConfig.ThrowWait = preset.ThrowWait
+        BlatantConfig.SafetyBuffer = preset.SafetyBuffer
+    end
+end
+
+-- Initialize remotes on load
+if not InitRemotes() then
+    warn("Failed to initialize Blatant Beta remotes!")
 end
 
 local Window = WindUI:CreateWindow({
@@ -214,7 +394,7 @@ local Window = WindUI:CreateWindow({
     },
 })
 
--- TAB FISHING (BLATANT BETA)
+-- TAB FISHING
 local fishing = Window:Tab({
     Title = "Fishing",
     Icon = "fish",
@@ -222,41 +402,42 @@ local fishing = Window:Tab({
     IconShape = true,
 })
 
-local blatant = fishing:Section({
-    Title = "Blatant Beta - Ultra Fast",
-    Icon = "zap",
+local main = fishing:Section({
+    Title = "Blatant Beta - Robust Edition",
+    Icon = "shield",
     TextXAlignment = "Left",
     TextSize = 17
 })
 
 fishing:Divider()
 
-blatant:Toggle({
+main:Toggle({
     Title = "Enable Blatant Beta",
-    Desc = "Ultra fast multi-cast fishing system",
+    Desc = "Reliable automated fishing with error handling",
     Value = BlatantConfig.Active,
     Callback = function(state)
         ToggleBlatantFishing(state)
         
         if state then
             WindUI:Notify({
-                Title = "Blatant Beta Started",
-                Content = "Ultra fast mode activated!",
+                Title = "✅ Started",
+                Content = "Blatant Beta activated - " .. BlatantConfig.Mode .. " Mode",
                 Duration = 3,
-                Icon = "zap"
+                Icon = "check"
             })
         else
             local runtime = os.time() - BlatantStats.SessionStart
-            local minutes = math.floor(runtime / 60)
-            local seconds = runtime % 60
+            local successRate = BlatantStats.TotalAttempts > 0 
+                and math.floor((BlatantStats.SuccessfulCatches / BlatantStats.TotalAttempts) * 100)
+                or 0
             
             WindUI:Notify({
-                Title = "Blatant Beta Stopped",
-                Content = string.format("Catches: %d | CPM: %d | Time: %dm %ds", 
-                    BlatantStats.TotalCatches,
-                    BlatantStats.CatchesPerMinute,
-                    minutes,
-                    seconds
+                Title = "⏸️ Stopped",
+                Content = string.format("Caught: %d/%d (%d%% success) | Runtime: %ds", 
+                    BlatantStats.SuccessfulCatches,
+                    BlatantStats.TotalAttempts,
+                    successRate,
+                    runtime
                 ),
                 Duration = 6,
                 Icon = "info"
@@ -267,150 +448,184 @@ blatant:Toggle({
 
 fishing:Divider()
 
-local mode = fishing:Section({
-    Title = "Casting Mode",
-    Icon = "settings",
+local modes = fishing:Section({
+    Title = "Speed Modes",
+    Icon = "gauge",
     TextXAlignment = "Left",
     TextSize = 16
 })
 
-mode:Toggle({
-    Title = "Parallel Casting",
-    Desc = "Cast multiple times simultaneously (FASTEST)",
-    Value = BlatantConfig.UseParallel,
-    Callback = function(state)
-        BlatantConfig.UseParallel = state
+modes:Dropdown({
+    Title = "Select Mode",
+    Desc = "Choose fishing speed mode",
+    Values = {"Safe", "Balanced", "Fast"},
+    Value = BlatantConfig.Mode,
+    Callback = function(mode)
+        ApplyMode(mode)
         WindUI:Notify({
             Title = "Mode Changed",
-            Content = state and "Parallel Mode" or "Sequential Mode",
+            Content = mode .. " Mode activated",
             Duration = 2,
             Icon = "info"
         })
     end
 })
 
-mode:Toggle({
-    Title = "Multi-Cast",
-    Desc = "Enable multiple casts per cycle",
-    Value = BlatantConfig.MultiCast,
-    Callback = function(state)
-        BlatantConfig.MultiCast = state
+modes:Button({
+    Title = "🐌 Safe Mode",
+    Desc = "Slower but most reliable (2.5s cycle)",
+    Callback = function()
+        ApplyMode("Safe")
+        WindUI:Notify({
+            Title = "Mode Applied",
+            Content = "Safe Mode - Best reliability",
+            Duration = 2,
+            Icon = "shield"
+        })
     end
 })
 
-mode:Slider({
-    Title = "Casts Per Cycle",
-    Desc = "How many times to cast per cycle (more = faster)",
-    Step = 1,
-    Value = {
-        Min = 1,
-        Max = 10,
-        Default = BlatantConfig.CastPerCycle
-    },
-    Callback = function(value)
-        BlatantConfig.CastPerCycle = value
+modes:Button({
+    Title = "⚡ Balanced Mode",
+    Desc = "Good balance between speed and reliability (1.8s cycle)",
+    Callback = function()
+        ApplyMode("Balanced")
         WindUI:Notify({
-            Title = "Setting Updated",
-            Content = value .. " casts per cycle",
+            Title = "Mode Applied",
+            Content = "Balanced Mode - Recommended",
             Duration = 2,
-            Icon = "info"
+            Icon = "zap"
+        })
+    end
+})
+
+modes:Button({
+    Title = "🚀 Fast Mode",
+    Desc = "Faster but slightly less reliable (1.3s cycle)",
+    Callback = function()
+        ApplyMode("Fast")
+        WindUI:Notify({
+            Title = "Mode Applied",
+            Content = "Fast Mode - Higher speed",
+            Duration = 2,
+            Icon = "rocket"
         })
     end
 })
 
 fishing:Divider()
 
-local timing = fishing:Section({
-    Title = "Timing Settings",
-    Icon = "clock",
+local advanced = fishing:Section({
+    Title = "Advanced Settings",
+    Icon = "settings",
     TextXAlignment = "Left",
     TextSize = 16
 })
 
-timing:Slider({
-    Title = "Cast Delay",
-    Desc = "Delay between casting cycles (lower = faster)",
-    Step = 0.05,
+advanced:Slider({
+    Title = "Cycle Delay",
+    Desc = "Delay between fishing cycles",
+    Step = 0.1,
     Value = {
-        Min = 0.1,
-        Max = 2.0,
-        Default = BlatantConfig.CastDelay
+        Min = 0.8,
+        Max = 5.0,
+        Default = BlatantConfig.CycleDelay
     },
     Callback = function(value)
-        BlatantConfig.CastDelay = value
+        BlatantConfig.CycleDelay = value
     end
 })
 
-timing:Slider({
-    Title = "Complete Delay",
-    Desc = "Delay before completing catch (lower = faster)",
+advanced:Slider({
+    Title = "Catch Delay",
+    Desc = "Delay before completing catch",
+    Step = 0.05,
+    Value = {
+        Min = 0.2,
+        Max = 2.0,
+        Default = BlatantConfig.CatchDelay
+    },
+    Callback = function(value)
+        BlatantConfig.CatchDelay = value
+    end
+})
+
+advanced:Slider({
+    Title = "Charge Wait",
+    Desc = "Wait time after charging",
     Step = 0.05,
     Value = {
         Min = 0.05,
-        Max = 1.0,
-        Default = BlatantConfig.CompleteDelay
+        Max = 0.5,
+        Default = BlatantConfig.ChargeWait
     },
     Callback = function(value)
-        BlatantConfig.CompleteDelay = value
+        BlatantConfig.ChargeWait = value
     end
 })
 
-timing:Slider({
-    Title = "Equip Interval",
-    Desc = "How often to auto-equip rod",
-    Step = 0.1,
+advanced:Slider({
+    Title = "Throw Wait",
+    Desc = "Wait time after throwing",
+    Step = 0.05,
     Value = {
-        Min = 0.5,
-        Max = 3.0,
-        Default = BlatantConfig.EquipInterval
+        Min = 0.05,
+        Max = 0.5,
+        Default = BlatantConfig.ThrowWait
     },
     Callback = function(value)
-        BlatantConfig.EquipInterval = value
+        BlatantConfig.ThrowWait = value
     end
 })
 
 fishing:Divider()
 
 local stats = fishing:Section({
-    Title = "Statistics & Info",
+    Title = "Statistics",
     Icon = "bar-chart",
     TextXAlignment = "Left",
     TextSize = 16
 })
 
 stats:Button({
-    Title = "View Live Stats",
-    Desc = "Show current fishing statistics",
-    Icon = "activity",
+    Title = "📊 View Stats",
+    Desc = "Show detailed statistics",
     Callback = function()
         local runtime = os.time() - BlatantStats.SessionStart
-        local minutes = math.floor(runtime / 60)
-        local seconds = runtime % 60
+        local successRate = BlatantStats.TotalAttempts > 0 
+            and math.floor((BlatantStats.SuccessfulCatches / BlatantStats.TotalAttempts) * 100)
+            or 0
+        local catchesPerMin = runtime > 0
+            and math.floor((BlatantStats.SuccessfulCatches / runtime) * 60)
+            or 0
         
         WindUI:Notify({
-            Title = "Live Statistics",
+            Title = "📊 Session Statistics",
             Content = string.format(
-                "Total Catches: %d\nCatches/Min: %d\nRuntime: %dm %ds\nMode: %s",
-                BlatantStats.TotalCatches,
-                BlatantStats.CatchesPerMinute,
-                minutes,
-                seconds,
-                BlatantConfig.UseParallel and "Parallel" or "Sequential"
+                "Successful: %d\nFailed: %d\nTotal Attempts: %d\nSuccess Rate: %d%%\nCatches/Min: %d\nRuntime: %ds\nMode: %s",
+                BlatantStats.SuccessfulCatches,
+                BlatantStats.FailedCatches,
+                BlatantStats.TotalAttempts,
+                successRate,
+                catchesPerMin,
+                runtime,
+                BlatantConfig.Mode
             ),
-            Duration = 8,
+            Duration = 10,
             Icon = "info"
         })
     end
 })
 
 stats:Button({
-    Title = "Reset Stats",
+    Title = "🔄 Reset Stats",
     Desc = "Clear all statistics",
-    Icon = "refresh-cw",
     Callback = function()
-        BlatantStats.TotalCatches = 0
         BlatantStats.SessionStart = os.time()
-        BlatantStats.CatchesPerMinute = 0
+        BlatantStats.TotalAttempts = 0
+        BlatantStats.SuccessfulCatches = 0
+        BlatantStats.FailedCatches = 0
+        BlatantStats.ConsecutiveFails = 0
         
         WindUI:Notify({
             Title = "Stats Reset",
@@ -423,62 +638,37 @@ stats:Button({
 
 fishing:Divider()
 
-local presets = fishing:Section({
-    Title = "Speed Presets",
-    Icon = "gauge",
+local debug = fishing:Section({
+    Title = "Debug & Info",
+    Icon = "bug",
     TextXAlignment = "Left",
     TextSize = 16
 })
 
-presets:Button({
-    Title = "🐌 Safe Mode",
-    Desc = "Slower but safer (3-5 catches/min)",
+debug:Button({
+    Title = "🔍 Check Remotes",
+    Desc = "Validate remote connections",
     Callback = function()
-        BlatantConfig.CastDelay = 1.5
-        BlatantConfig.CompleteDelay = 0.5
-        BlatantConfig.CastPerCycle = 1
-        BlatantConfig.UseParallel = false
-        WindUI:Notify({Title = "Preset Applied", Content = "Safe Mode", Duration = 2})
-    end
-})
-
-presets:Button({
-    Title = "⚡ Fast Mode",
-    Desc = "Balanced speed (8-12 catches/min)",
-    Callback = function()
-        BlatantConfig.CastDelay = 0.6
-        BlatantConfig.CompleteDelay = 0.25
-        BlatantConfig.CastPerCycle = 2
-        BlatantConfig.UseParallel = false
-        WindUI:Notify({Title = "Preset Applied", Content = "Fast Mode", Duration = 2})
-    end
-})
-
-presets:Button({
-    Title = "🚀 Ultra Mode",
-    Desc = "Maximum speed (15-25 catches/min)",
-    Callback = function()
-        BlatantConfig.CastDelay = 0.3
-        BlatantConfig.CompleteDelay = 0.15
-        BlatantConfig.CastPerCycle = 4
-        BlatantConfig.UseParallel = true
-        WindUI:Notify({Title = "Preset Applied", Content = "Ultra Mode", Duration = 2})
-    end
-})
-
-presets:Button({
-    Title = "💀 Insane Mode",
-    Desc = "EXTREME SPEED (30+ catches/min) - USE AT OWN RISK!",
-    Callback = function()
-        BlatantConfig.CastDelay = 0.15
-        BlatantConfig.CompleteDelay = 0.08
-        BlatantConfig.CastPerCycle = 8
-        BlatantConfig.UseParallel = true
+        local valid = ValidateRemotes()
         WindUI:Notify({
-            Title = "⚠️ WARNING",
-            Content = "Insane Mode - May cause detection!",
-            Duration = 4,
-            Icon = "alert-triangle"
+            Title = valid and "✅ Remotes OK" or "❌ Remotes Error",
+            Content = valid and "All remotes connected" or "Some remotes missing!",
+            Duration = 3,
+            Icon = valid and "check" or "x"
+        })
+    end
+})
+
+debug:Button({
+    Title = "🔄 Reinitialize",
+    Desc = "Reinitialize all remotes",
+    Callback = function()
+        local success = InitRemotes()
+        WindUI:Notify({
+            Title = success and "✅ Success" or "❌ Failed",
+            Content = success and "Remotes reinitialized" or "Failed to initialize remotes",
+            Duration = 3,
+            Icon = success and "check" or "x"
         })
     end
 })
