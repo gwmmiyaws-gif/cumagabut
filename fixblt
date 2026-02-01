@@ -1,432 +1,244 @@
--- Fish It! Auto Fishing V6 (FORCE EQUIP FIX)
+-- DEBUG SCANNER: Cek Kenapa Rod Ga Ke-detect
 
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 
--- UI Setup
+-- Buat GUI Debug
 local ScreenGui = Instance.new("ScreenGui")
-local MainFrame = Instance.new("Frame")
-local TitleLabel = Instance.new("TextLabel")
-local StatusLabel = Instance.new("TextLabel")
-local DebugLabel = Instance.new("TextLabel")
-local RodLabel = Instance.new("TextLabel")
-local ToggleButton = Instance.new("TextButton")
-local ReelDelayLabel = Instance.new("TextLabel")
-local ReelDelayBox = Instance.new("TextBox")
-local CastDelayLabel = Instance.new("TextLabel")
-local CastDelayBox = Instance.new("TextBox")
-local StatsFrame = Instance.new("Frame")
-local StatsLabel = Instance.new("TextLabel")
-local MinimizeButton = Instance.new("TextButton")
-local CloseButton = Instance.new("TextButton")
-local TestCastButton = Instance.new("TextButton")
-
-ScreenGui.Name = "AutoFishGui"
+ScreenGui.Name = "DebugScanner"
 ScreenGui.Parent = game.CoreGui
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.ResetOnSpawn = false
 
--- Main Frame
-MainFrame.Parent = ScreenGui
-MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-MainFrame.BorderSizePixel = 2
-MainFrame.BorderColor3 = Color3.fromRGB(0, 200, 255)
-MainFrame.Position = UDim2.new(0.35, 0, 0.2, 0)
-MainFrame.Size = UDim2.new(0, 400, 0, 380)
-MainFrame.Active = true
-MainFrame.Draggable = true
+local Frame = Instance.new("Frame")
+Frame.Size = UDim2.new(0, 500, 0, 600)
+Frame.Position = UDim2.new(0.5, -250, 0.5, -300)
+Frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+Frame.BorderSizePixel = 2
+Frame.BorderColor3 = Color3.fromRGB(0, 200, 255)
+Frame.Parent = ScreenGui
 
--- Title
-TitleLabel.Parent = MainFrame
-TitleLabel.BackgroundColor3 = Color3.fromRGB(0, 150, 200)
-TitleLabel.BorderSizePixel = 0
-TitleLabel.Size = UDim2.new(1, -70, 0, 35)
-TitleLabel.Font = Enum.Font.GothamBold
-TitleLabel.Text = "🎣 Auto Fishing V6"
-TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-TitleLabel.TextSize = 15
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 40)
+Title.BackgroundColor3 = Color3.fromRGB(0, 150, 200)
+Title.Text = "🔍 DEBUG SCANNER"
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 16
+Title.TextColor3 = Color3.new(1,1,1)
+Title.Parent = Frame
 
--- Minimize Button
-MinimizeButton.Parent = MainFrame
-MinimizeButton.BackgroundColor3 = Color3.fromRGB(50, 150, 200)
-MinimizeButton.BorderSizePixel = 0
-MinimizeButton.Position = UDim2.new(1, -70, 0, 0)
-MinimizeButton.Size = UDim2.new(0, 35, 0, 35)
-MinimizeButton.Font = Enum.Font.GothamBold
-MinimizeButton.Text = "-"
-MinimizeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-MinimizeButton.TextSize = 20
+local ScrollFrame = Instance.new("ScrollingFrame")
+ScrollFrame.Size = UDim2.new(1, -20, 1, -90)
+ScrollFrame.Position = UDim2.new(0, 10, 0, 50)
+ScrollFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+ScrollFrame.BorderSizePixel = 0
+ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+ScrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+ScrollFrame.Parent = Frame
 
--- Close Button
-CloseButton.Parent = MainFrame
-CloseButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-CloseButton.BorderSizePixel = 0
-CloseButton.Position = UDim2.new(1, -35, 0, 0)
-CloseButton.Size = UDim2.new(0, 35, 0, 35)
-CloseButton.Font = Enum.Font.GothamBold
-CloseButton.Text = "X"
-CloseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-CloseButton.TextSize = 18
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Size = UDim2.new(1, -20, 0, 35)
+CloseBtn.Position = UDim2.new(0, 10, 1, -45)
+CloseBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+CloseBtn.Text = "CLOSE"
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.TextSize = 14
+CloseBtn.TextColor3 = Color3.new(1,1,1)
+CloseBtn.Parent = Frame
 
--- Status
-StatusLabel.Parent = MainFrame
-StatusLabel.BackgroundTransparency = 1
-StatusLabel.Position = UDim2.new(0, 10, 0, 45)
-StatusLabel.Size = UDim2.new(1, -20, 0, 18)
-StatusLabel.Font = Enum.Font.GothamBold
-StatusLabel.Text = "Status: Disabled"
-StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-StatusLabel.TextSize = 12
-StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
+CloseBtn.MouseButton1Click:Connect(function()
+    ScreenGui:Destroy()
+end)
 
--- Rod Label (INFO PENTING)
-RodLabel.Parent = MainFrame
-RodLabel.BackgroundTransparency = 1
-RodLabel.Position = UDim2.new(0, 10, 0, 63)
-RodLabel.Size = UDim2.new(1, -20, 0, 36) -- Tinggi diperbesar
-RodLabel.Font = Enum.Font.Code
-RodLabel.Text = "Rod: Auto Equip Mode (No Detection Needed)"
-RodLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
-RodLabel.TextSize = 10
-RodLabel.TextXAlignment = Enum.TextXAlignment.Left
-RodLabel.TextWrapped = true
+local function AddLog(text, color)
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -10, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.Font = Enum.Font.Code
+    label.TextSize = 10
+    label.TextColor3 = color or Color3.new(1, 1, 1)
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextYAlignment = Enum.TextYAlignment.Top
+    label.TextWrapped = true
+    label.AutomaticSize = Enum.AutomaticSize.Y
+    label.Parent = ScrollFrame
+    
+    print(text)
+end
 
--- Debug Label
-DebugLabel.Parent = MainFrame
-DebugLabel.BackgroundTransparency = 1
-DebugLabel.Position = UDim2.new(0, 10, 0, 105)
-DebugLabel.Size = UDim2.new(1, -20, 0, 18)
-DebugLabel.Font = Enum.Font.Code
-DebugLabel.Text = "Debug: Ready to start..."
-DebugLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-DebugLabel.TextSize = 10
-DebugLabel.TextXAlignment = Enum.TextXAlignment.Left
+-- ============================================================
+-- SCAN 1: CHARACTER & TOOLS
+-- ============================================================
+AddLog("=== SCAN 1: CHARACTER & TOOLS ===", Color3.fromRGB(0, 255, 255))
 
--- Toggle Button
-ToggleButton.Parent = MainFrame
-ToggleButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-ToggleButton.BorderSizePixel = 0
-ToggleButton.Position = UDim2.new(0, 10, 0, 130)
-ToggleButton.Size = UDim2.new(1, -20, 0, 35)
-ToggleButton.Font = Enum.Font.GothamBold
-ToggleButton.Text = "▶ START AUTO FISHING"
-ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-ToggleButton.TextSize = 13
+local char = LocalPlayer.Character
+if not char then
+    AddLog("❌ Character: NOT FOUND", Color3.fromRGB(255, 100, 100))
+else
+    AddLog("✅ Character: " .. char.Name, Color3.fromRGB(100, 255, 100))
+    
+    -- Cek Equipped Tool
+    local equippedTool = char:FindFirstChildOfClass("Tool")
+    if equippedTool then
+        AddLog("✅ Equipped Tool: " .. equippedTool.Name, Color3.fromRGB(100, 255, 100))
+    else
+        AddLog("❌ Equipped Tool: NONE", Color3.fromRGB(255, 200, 100))
+    end
+    
+    -- List ALL children di character
+    AddLog("\n--- Character Children: ---", Color3.fromRGB(200, 200, 200))
+    for _, child in pairs(char:GetChildren()) do
+        AddLog("  - " .. child.ClassName .. ": " .. child.Name, Color3.new(0.8, 0.8, 0.8))
+    end
+end
 
--- Test Cast Button
-TestCastButton.Parent = MainFrame
-TestCastButton.BackgroundColor3 = Color3.fromRGB(100, 150, 100)
-TestCastButton.BorderSizePixel = 0
-TestCastButton.Position = UDim2.new(0, 10, 0, 170)
-TestCastButton.Size = UDim2.new(1, -20, 0, 30)
-TestCastButton.Font = Enum.Font.Gotham
-TestCastButton.Text = "🧪 Test Cast (Manual)"
-TestCastButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-TestCastButton.TextSize = 12
+-- ============================================================
+-- SCAN 2: BACKPACK
+-- ============================================================
+AddLog("\n=== SCAN 2: BACKPACK ===", Color3.fromRGB(0, 255, 255))
 
--- Reel Delay
-ReelDelayLabel.Parent = MainFrame
-ReelDelayLabel.BackgroundTransparency = 1
-ReelDelayLabel.Position = UDim2.new(0, 10, 0, 210)
-ReelDelayLabel.Size = UDim2.new(0.55, 0, 0, 20)
-ReelDelayLabel.Font = Enum.Font.Gotham
-ReelDelayLabel.Text = "Reel Delay (sec):"
-ReelDelayLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-ReelDelayLabel.TextSize = 11
-ReelDelayLabel.TextXAlignment = Enum.TextXAlignment.Left
+local backpack = LocalPlayer:FindFirstChild("Backpack")
+if not backpack then
+    AddLog("❌ Backpack: NOT FOUND", Color3.fromRGB(255, 100, 100))
+else
+    AddLog("✅ Backpack Found", Color3.fromRGB(100, 255, 100))
+    
+    local toolCount = 0
+    for _, tool in pairs(backpack:GetChildren()) do
+        if tool:IsA("Tool") then
+            toolCount = toolCount + 1
+            AddLog("  🔧 Tool #" .. toolCount .. ": " .. tool.Name, Color3.fromRGB(255, 255, 100))
+        end
+    end
+    
+    if toolCount == 0 then
+        AddLog("⚠️ No Tools in Backpack", Color3.fromRGB(255, 200, 100))
+    end
+end
 
-ReelDelayBox.Parent = MainFrame
-ReelDelayBox.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-ReelDelayBox.BorderSizePixel = 1
-ReelDelayBox.BorderColor3 = Color3.fromRGB(100, 100, 100)
-ReelDelayBox.Position = UDim2.new(0.6, 0, 0, 210)
-ReelDelayBox.Size = UDim2.new(0.35, 0, 0, 25)
-ReelDelayBox.Font = Enum.Font.Code
-ReelDelayBox.Text = "0.3"
-ReelDelayBox.TextColor3 = Color3.fromRGB(0, 255, 150)
-ReelDelayBox.TextSize = 12
+-- ============================================================
+-- SCAN 3: REMOTES
+-- ============================================================
+AddLog("\n=== SCAN 3: REMOTES ===", Color3.fromRGB(0, 255, 255))
 
--- Cast Delay
-CastDelayLabel.Parent = MainFrame
-CastDelayLabel.BackgroundTransparency = 1
-CastDelayLabel.Position = UDim2.new(0, 10, 0, 245)
-CastDelayLabel.Size = UDim2.new(0.55, 0, 0, 20)
-CastDelayLabel.Font = Enum.Font.Gotham
-CastDelayLabel.Text = "Cast Delay (sec):"
-CastDelayLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-CastDelayLabel.TextSize = 11
-CastDelayLabel.TextXAlignment = Enum.TextXAlignment.Left
-
-CastDelayBox.Parent = MainFrame
-CastDelayBox.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-CastDelayBox.BorderSizePixel = 1
-CastDelayBox.BorderColor3 = Color3.fromRGB(100, 100, 100)
-CastDelayBox.Position = UDim2.new(0.6, 0, 0, 245)
-CastDelayBox.Size = UDim2.new(0.35, 0, 0, 25)
-CastDelayBox.Font = Enum.Font.Code
-CastDelayBox.Text = "0.8"
-CastDelayBox.TextColor3 = Color3.fromRGB(0, 255, 150)
-CastDelayBox.TextSize = 12
-
--- Stats Frame
-StatsFrame.Parent = MainFrame
-StatsFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-StatsFrame.BorderSizePixel = 1
-StatsFrame.BorderColor3 = Color3.fromRGB(0, 200, 255)
-StatsFrame.Position = UDim2.new(0, 10, 0, 280)
-StatsFrame.Size = UDim2.new(1, -20, 0, 90)
-
-StatsLabel.Parent = StatsFrame
-StatsLabel.BackgroundTransparency = 1
-StatsLabel.Size = UDim2.new(1, -10, 1, -10)
-StatsLabel.Position = UDim2.new(0, 5, 0, 5)
-StatsLabel.Font = Enum.Font.Code
-StatsLabel.Text = "Fish Caught: 0\nLast Fish: None\nRuntime: 0s\nState: Idle"
-StatsLabel.TextColor3 = Color3.fromRGB(0, 255, 150)
-StatsLabel.TextSize = 11
-StatsLabel.TextXAlignment = Enum.TextXAlignment.Left
-StatsLabel.TextYAlignment = Enum.TextYAlignment.Top
-
--- Variables
-local autoFishEnabled = false
-local fishCaught = 0
-local lastFishName = "None"
-local startTime = 0
-local currentState = "Idle"
-local isCasting = false
-local isReeling = false
-local autoEquipThread = nil
-
--- Find Remotes
 local RPath = {"Packages", "_Index", "sleitnick_net@0.2.0", "net"}
 local RepStorage = game:GetService("ReplicatedStorage")
 
-local function GetRemote(remotePath, name, timeout)
+local function GetRemote(remotePath, name)
     local currentInstance = RepStorage
     for _, childName in ipairs(remotePath) do
-        currentInstance = currentInstance:WaitForChild(childName, timeout or 0.5)
+        currentInstance = currentInstance:WaitForChild(childName, 1)
         if not currentInstance then return nil end
     end
     return currentInstance:FindFirstChild(name)
 end
 
-local ChargeFishingRod = GetRemote(RPath, "RF/ChargeFishingRod")
-local RequestFishingMinigame = GetRemote(RPath, "RF/RequestFishingMinigameStarted")
-local CancelFishing = GetRemote(RPath, "RF/CancelFishingInputs")
+local remotes = {
+    "RE/EquipToolFromHotbar",
+    "RF/ChargeFishingRod",
+    "RF/RequestFishingMinigameStarted",
+    "RF/CancelFishingInputs",
+    "RE/FishCaught",
+    "RE/FishingMinigameChanged",
+    "RE/BaitDestroyed"
+}
+
+for _, remoteName in ipairs(remotes) do
+    local remote = GetRemote(RPath, remoteName)
+    if remote then
+        AddLog("✅ " .. remoteName, Color3.fromRGB(100, 255, 100))
+    else
+        AddLog("❌ " .. remoteName .. " (NOT FOUND)", Color3.fromRGB(255, 100, 100))
+    end
+end
+
+-- ============================================================
+-- SCAN 4: TEST EQUIP REMOTE
+-- ============================================================
+AddLog("\n=== SCAN 4: TEST EQUIP REMOTE ===", Color3.fromRGB(0, 255, 255))
+
 local RE_EquipToolFromHotbar = GetRemote(RPath, "RE/EquipToolFromHotbar")
 
-local FishCaughtEvent = GetRemote(RPath, "RE/FishCaught")
-local FishingMinigameEvent = GetRemote(RPath, "RE/FishingMinigameChanged")
-local BaitDestroyedEvent = GetRemote(RPath, "RE/BaitDestroyed")
-
--- Debug
-local function updateDebug(msg)
-    DebugLabel.Text = "Debug: " .. msg
-    print("[AutoFish]", msg)
-end
-
--- Update Stats
-local function updateStats()
-    local runtime = autoFishEnabled and math.floor(os.clock() - startTime) or 0
-    StatsLabel.Text = string.format(
-        "Fish Caught: %d\nLast Fish: %s\nRuntime: %ds\nState: %s",
-        fishCaught,
-        lastFishName,
-        runtime,
-        currentState
-    )
-end
-
--- [FIX UTAMA] Cast Rod (PAKSA EQUIP SEBELUM CAST)
-local function castRod()
-    if isCasting or isReeling then 
-        updateDebug("Already fishing")
-        return 
-    end
+if not RE_EquipToolFromHotbar then
+    AddLog("❌ EquipToolFromHotbar remote TIDAK DITEMUKAN!", Color3.fromRGB(255, 50, 50))
+else
+    AddLog("✅ Remote ditemukan, mencoba equip slot 1...", Color3.fromRGB(100, 255, 100))
     
-    isCasting = true
-    currentState = "Casting..."
-    updateStats()
-    
-    -- PAKSA EQUIP DULU (3x biar pasti)
-    for i = 1, 3 do
-        pcall(function() RE_EquipToolFromHotbar:FireServer(1) end)
-        task.wait(0.05)
-    end
-    
-    updateDebug("🎣 Forcing cast...")
-    
-    if ChargeFishingRod then
-        task.spawn(function()
-            pcall(function()
-                ChargeFishingRod:InvokeServer(true)
-                task.wait(0.15)
-                ChargeFishingRod:InvokeServer(false)
-                updateDebug("✓ Cast sent")
-            end)
-        end)
-    end
-    
-    currentState = "Waiting..."
-    updateStats()
-    
-    task.wait(0.5)
-    isCasting = false
-end
-
--- Reel Function
-local function reelIn()
-    if isReeling then return end
-    
-    isReeling = true
-    currentState = "Reeling..."
-    updateStats()
-    updateDebug("🐟 Reeling...")
-    
-    local reelDelay = tonumber(ReelDelayBox.Text) or 0.3
-    task.wait(reelDelay)
-    
-    if RequestFishingMinigame then
-        pcall(function()
-            RequestFishingMinigame:InvokeServer()
-            updateDebug("✓ Reel sent")
-        end)
-    end
-    
-    task.wait(0.5)
-    isReeling = false
-end
-
--- [IMPROVED] Auto Equip Thread (Aggressive Spam)
-local function StartAutoEquipThread()
-    if autoEquipThread then task.cancel(autoEquipThread) end
-    
-    autoEquipThread = task.spawn(function()
-        while autoFishEnabled do
-            -- Spam equip SANGAT AGRESIF (setiap 0.05 detik)
-            pcall(function() RE_EquipToolFromHotbar:FireServer(1) end)
-            task.wait(0.05)
-        end
+    local success, err = pcall(function()
+        RE_EquipToolFromHotbar:FireServer(1)
     end)
-end
-
-local function StopAutoEquipThread()
-    if autoEquipThread then 
-        task.cancel(autoEquipThread) 
-        autoEquipThread = nil 
-    end
-    pcall(function() RE_EquipToolFromHotbar:FireServer(0) end)
-end
-
--- Event Listeners
-if FishCaughtEvent then
-    FishCaughtEvent.OnClientEvent:Connect(function(fishName, ...)
-        fishCaught = fishCaught + 1
-        lastFishName = tostring(fishName)
-        currentState = "🎉 Caught!"
-        updateStats()
-        updateDebug("✓✓ CAUGHT: " .. lastFishName)
-        
-        if autoFishEnabled then
-            task.wait(tonumber(CastDelayBox.Text) or 0.8)
-            castRod()
-        end
-    end)
-end
-
-if FishingMinigameEvent then
-    FishingMinigameEvent.OnClientEvent:Connect(function()
-        if autoFishEnabled then
-            reelIn()
-        end
-    end)
-end
-
-if BaitDestroyedEvent then
-    BaitDestroyedEvent.OnClientEvent:Connect(function(playerName)
-        if playerName == LocalPlayer.Name and autoFishEnabled then
-            updateDebug("Bait lost, recasting...")
-            task.wait(tonumber(CastDelayBox.Text) or 0.8)
-            castRod()
-        end
-    end)
-end
-
--- Toggle Button
-ToggleButton.MouseButton1Click:Connect(function()
-    autoFishEnabled = not autoFishEnabled
     
-    if autoFishEnabled then
-        ToggleButton.Text = "⏸ STOP"
-        ToggleButton.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
-        StatusLabel.Text = "Status: ✅ RUNNING"
-        StatusLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
-        
-        startTime = os.clock()
-        fishCaught = 0
-        updateStats()
-        
-        updateDebug("Starting with force equip mode...")
-        
-        -- Start Auto Equip Thread
-        StartAutoEquipThread()
+    if success then
+        AddLog("✅ FireServer(1) BERHASIL dipanggil", Color3.fromRGB(100, 255, 100))
         
         task.wait(0.5)
-        castRod()
         
-        -- Safety loop
-        task.spawn(function()
-            while autoFishEnabled do
-                task.wait(20)
-                if autoFishEnabled and not isCasting and not isReeling then
-                    updateDebug("⏰ Timeout - recasting")
-                    castRod()
-                end
+        -- Cek ulang apakah ada perubahan
+        local charAfter = LocalPlayer.Character
+        if charAfter then
+            local toolAfter = charAfter:FindFirstChildOfClass("Tool")
+            if toolAfter then
+                AddLog("✅ SUKSES! Tool sekarang equipped: " .. toolAfter.Name, Color3.fromRGB(0, 255, 0))
+            else
+                AddLog("⚠️ Remote dipanggil, tapi tool BELUM muncul di Character", Color3.fromRGB(255, 200, 100))
+                AddLog("   Kemungkinan: Slot 1 kosong, atau butuh delay lebih lama", Color3.fromRGB(200, 200, 200))
             end
-        end)
-    else
-        ToggleButton.Text = "▶ START"
-        ToggleButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-        StatusLabel.Text = "Status: Stopped"
-        StatusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-        
-        isCasting = false
-        isReeling = false
-        
-        StopAutoEquipThread()
-        
-        if CancelFishing then
-            pcall(function() CancelFishing:InvokeServer() end)
         end
+    else
+        AddLog("❌ ERROR saat FireServer: " .. tostring(err), Color3.fromRGB(255, 50, 50))
     end
-end)
+end
 
--- Test Cast
-TestCastButton.MouseButton1Click:Connect(function()
-    castRod()
-end)
+-- ============================================================
+-- SCAN 5: REPLION DATA (Inventory Check)
+-- ============================================================
+AddLog("\n=== SCAN 5: REPLION INVENTORY ===", Color3.fromRGB(0, 255, 255))
 
--- Minimize
-local minimized = false
-MinimizeButton.MouseButton1Click:Connect(function()
-    minimized = not minimized
-    MainFrame.Size = minimized and UDim2.new(0, 400, 0, 35) or UDim2.new(0, 400, 0, 380)
-    MinimizeButton.Text = minimized and "+" or "-"
-end)
+local function GetPlayerDataReplion()
+    local ReplionModule = RepStorage:WaitForChild("Packages"):WaitForChild("Replion", 5)
+    if not ReplionModule then return nil end
+    local ReplionClient = require(ReplionModule).Client
+    return ReplionClient:WaitReplion("Data", 5)
+end
 
--- Close
-CloseButton.MouseButton1Click:Connect(function()
-    autoFishEnabled = false
-    StopAutoEquipThread()
-    ScreenGui:Destroy()
-end)
-
--- Stats Loop
-task.spawn(function()
-    while task.wait(0.5) do
-        if autoFishEnabled then updateStats() end
+local replion = GetPlayerDataReplion()
+if not replion then
+    AddLog("❌ Replion Data: NOT FOUND", Color3.fromRGB(255, 100, 100))
+else
+    AddLog("✅ Replion Data ditemukan", Color3.fromRGB(100, 255, 100))
+    
+    local success, inventoryData = pcall(function() 
+        return replion:GetExpect("Inventory") 
+    end)
+    
+    if success and inventoryData then
+        AddLog("✅ Inventory Data loaded", Color3.fromRGB(100, 255, 100))
+        
+        if inventoryData["Fishing Rods"] then
+            AddLog("\n--- Fishing Rods di Inventory: ---", Color3.fromRGB(200, 200, 200))
+            local rodCount = 0
+            for _, rod in ipairs(inventoryData["Fishing Rods"]) do
+                rodCount = rodCount + 1
+                local uuid = rod.UUID or "No UUID"
+                local id = rod.Id or "No ID"
+                AddLog("  🎣 Rod #" .. rodCount .. ": ID=" .. id .. " | UUID=" .. uuid, Color3.fromRGB(255, 255, 100))
+            end
+            
+            if rodCount == 0 then
+                AddLog("⚠️ TIDAK ADA ROD DI INVENTORY!", Color3.fromRGB(255, 100, 100))
+            end
+        else
+            AddLog("❌ Key 'Fishing Rods' TIDAK ADA di Inventory", Color3.fromRGB(255, 100, 100))
+        end
+    else
+        AddLog("❌ Gagal load Inventory: " .. tostring(inventoryData), Color3.fromRGB(255, 100, 100))
     end
-end)
+end
 
-print("🎣 Auto Fishing V6 (Force Equip Mode) loaded!")
+-- ============================================================
+-- SUMMARY
+-- ============================================================
+AddLog("\n=== SUMMARY ===", Color3.fromRGB(255, 255, 0))
+AddLog("Kalau di atas ada ❌, screenshot dan kirim ke saya!", Color3.fromRGB(255, 255, 255))
+AddLog("Terutama bagian 'SCAN 4' dan 'SCAN 5'", Color3.fromRGB(200, 200, 200))
+
+print("=== DEBUG SCAN SELESAI ===")
