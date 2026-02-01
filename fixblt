@@ -14,13 +14,20 @@ end
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 
--- Blatant Beta Variables
+-- Blatant Beta Variables (Improved)
 local BlatantConfig = {
     Active = false,
-    CancelDelay = 1.6,
-    CompleteDelay = 0.37
+    CancelDelay = 1.2,        -- Lebih cepat
+    CompleteDelay = 0.25,     -- Lebih cepat
+    EquipDelay = 0.8,         -- Delay equip rod
+    ChargeAmount = math.huge, -- Max charge
+    ThrowPower = -139.63,     -- Throw distance
+    ThrowAccuracy = 0.996,    -- Throw accuracy
+    RetryAttempts = 5,        -- Max retry
+    RetryDelay = 0.03         -- Delay antar retry
 }
 
 local BlatantRemotes = {
@@ -29,6 +36,12 @@ local BlatantRemotes = {
     FishingCompleted = nil,
     EquipToolFromHotbar = nil,
     CancelFishingInputs = nil
+}
+
+local BlatantStats = {
+    TotalCatches = 0,
+    FailedAttempts = 0,
+    LastCatchTime = 0
 }
 
 -- Initialize Blatant Remotes
@@ -44,64 +57,152 @@ end)
 local BlatantMainThread = nil
 local BlatantEquipThread = nil
 
-local function BlatantFishingCycle()
-    task.spawn(function()
-        pcall(function()
-            local success, result = BlatantRemotes.CancelFishingInputs:InvokeServer()
-            if not success then
-                while not success do
-                    local retry = BlatantRemotes.CancelFishingInputs:InvokeServer()
-                    if retry then break end
-                    task.wait(0.05)
-                end
-            end
-            local chargeSuccess, chargeResult = BlatantRemotes.ChargeFishingRod:InvokeServer(math.huge)
-            if not chargeSuccess then
-                while not chargeSuccess do
-                    local retryCharge = BlatantRemotes.ChargeFishingRod:InvokeServer(math.huge)
-                    if retryCharge then break end
-                    task.wait(0.05)
-                end
-            end
-            BlatantRemotes.RequestFishingMinigameStarted:InvokeServer(-139.63, 0.996)
+-- Safe Remote Call dengan Retry Logic
+local function SafeInvoke(remote, ...)
+    local args = {...}
+    for attempt = 1, BlatantConfig.RetryAttempts do
+        local success, result = pcall(function()
+            return remote:InvokeServer(unpack(args))
         end)
-    end)
-    task.spawn(function()
-        task.wait(BlatantConfig.CompleteDelay)
-        if BlatantConfig.Active then
-            pcall(BlatantRemotes.FishingCompleted.FireServer, BlatantRemotes.FishingCompleted)
+        
+        if success and result then
+            return true, result
         end
-    end)
+        
+        if attempt < BlatantConfig.RetryAttempts then
+            task.wait(BlatantConfig.RetryDelay)
+        end
+    end
+    return false, nil
 end
 
-local function StartBlatantFishing()
-    BlatantEquipThread = task.spawn(function()
-        while BlatantConfig.Active do
-            pcall(BlatantRemotes.EquipToolFromHotbar.FireServer, BlatantRemotes.EquipToolFromHotbar, 1)
-            task.wait(1.5)
+local function SafeFire(remote, ...)
+    local args = {...}
+    for attempt = 1, BlatantConfig.RetryAttempts do
+        local success = pcall(function()
+            remote:FireServer(unpack(args))
+        end)
+        
+        if success then
+            return true
         end
-    end)
+        
+        if attempt < BlatantConfig.RetryAttempts then
+            task.wait(BlatantConfig.RetryDelay)
+        end
+    end
+    return false
+end
+
+-- Optimized Fishing Cycle
+local function BlatantFishingCycle()
+    -- Step 1: Cancel previous inputs
+    local cancelSuccess = SafeInvoke(BlatantRemotes.CancelFishingInputs)
+    if not cancelSuccess then
+        BlatantStats.FailedAttempts += 1
+        return false
+    end
     
+    task.wait(0.05)
+    
+    -- Step 2: Charge rod
+    local chargeSuccess = SafeInvoke(BlatantRemotes.ChargeFishingRod, BlatantConfig.ChargeAmount)
+    if not chargeSuccess then
+        BlatantStats.FailedAttempts += 1
+        return false
+    end
+    
+    task.wait(0.05)
+    
+    -- Step 3: Start fishing minigame
+    local throwSuccess = SafeInvoke(
+        BlatantRemotes.RequestFishingMinigameStarted, 
+        BlatantConfig.ThrowPower, 
+        BlatantConfig.ThrowAccuracy
+    )
+    
+    if not throwSuccess then
+        BlatantStats.FailedAttempts += 1
+        return false
+    end
+    
+    -- Step 4: Complete fishing after delay
+    task.wait(BlatantConfig.CompleteDelay)
+    
+    if BlatantConfig.Active then
+        local completeSuccess = SafeFire(BlatantRemotes.FishingCompleted)
+        if completeSuccess then
+            BlatantStats.TotalCatches += 1
+            BlatantStats.LastCatchTime = os.time()
+            return true
+        else
+            BlatantStats.FailedAttempts += 1
+            return false
+        end
+    end
+    
+    return false
+end
+
+-- Auto Equip Rod Thread
+local function AutoEquipRod()
     while BlatantConfig.Active do
-        BlatantFishingCycle()
-        task.wait(BlatantConfig.CancelDelay)
+        SafeFire(BlatantRemotes.EquipToolFromHotbar, 1)
+        task.wait(BlatantConfig.EquipDelay)
+    end
+end
+
+-- Main Fishing Loop
+local function StartBlatantFishing()
+    -- Start equip thread
+    BlatantEquipThread = task.spawn(AutoEquipRod)
+    
+    -- Wait for initial equip
+    task.wait(0.3)
+    
+    -- Main fishing loop
+    while BlatantConfig.Active do
+        local success = BlatantFishingCycle()
+        
+        if success then
+            -- Successful catch, continue with normal delay
+            task.wait(BlatantConfig.CancelDelay)
+        else
+            -- Failed attempt, wait a bit longer before retry
+            task.wait(BlatantConfig.CancelDelay + 0.2)
+        end
+        
+        -- Safety check
         if not BlatantConfig.Active then break end
-        task.wait(0.1)
     end
 end
 
 local function ToggleBlatantFishing(state)
     BlatantConfig.Active = state
+    
     if state then
+        -- Cancel existing threads
         if BlatantMainThread then task.cancel(BlatantMainThread) end
         if BlatantEquipThread then task.cancel(BlatantEquipThread) end
+        
+        -- Reset stats
+        BlatantStats.TotalCatches = 0
+        BlatantStats.FailedAttempts = 0
+        BlatantStats.LastCatchTime = os.time()
+        
+        -- Start new thread
         BlatantMainThread = task.spawn(StartBlatantFishing)
     else
+        -- Stop threads
         if BlatantMainThread then task.cancel(BlatantMainThread) end
         if BlatantEquipThread then task.cancel(BlatantEquipThread) end
         BlatantMainThread = nil
         BlatantEquipThread = nil
-        pcall(BlatantRemotes.CancelFishingInputs.InvokeServer, BlatantRemotes.CancelFishingInputs)
+        
+        -- Cancel fishing inputs
+        pcall(function()
+            BlatantRemotes.CancelFishingInputs:InvokeServer()
+        end)
     end
 end
 
@@ -147,7 +248,7 @@ local fishing = Window:Tab({
 })
 
 local blatant = fishing:Section({
-    Title = "Blatant Beta",
+    Title = "Blatant Beta - Improved",
     Icon = "zap",
     TextXAlignment = "Left",
     TextSize = 17
@@ -156,62 +257,194 @@ local blatant = fishing:Section({
 fishing:Divider()
 
 blatant:Toggle({
-    Title = "Blatant Beta",
-    Desc = "Automated fishing system (experimental)",
+    Title = "Enable Blatant Beta",
+    Desc = "Fast automated fishing with retry system",
     Value = BlatantConfig.Active,
     Callback = function(state)
         ToggleBlatantFishing(state)
         
         if state then
             WindUI:Notify({
-                Title = "Blatant Beta Enabled",
-                Content = "Auto fishing started",
+                Title = "Blatant Beta Started",
+                Content = "Fast fishing mode activated!",
                 Duration = 3,
                 Icon = "check"
             })
         else
+            local successRate = BlatantStats.TotalCatches > 0 
+                and math.floor((BlatantStats.TotalCatches / (BlatantStats.TotalCatches + BlatantStats.FailedAttempts)) * 100)
+                or 0
+            
             WindUI:Notify({
-                Title = "Blatant Beta Disabled",
-                Content = "Auto fishing stopped",
-                Duration = 3,
-                Icon = "x"
+                Title = "Blatant Beta Stopped",
+                Content = string.format("Catches: %d | Success: %d%%", 
+                    BlatantStats.TotalCatches, 
+                    successRate
+                ),
+                Duration = 5,
+                Icon = "info"
             })
         end
     end
 })
 
-blatant:Input({
+fishing:Divider()
+
+local settings = fishing:Section({
+    Title = "Timing Settings",
+    Icon = "clock",
+    TextXAlignment = "Left",
+    TextSize = 16
+})
+
+settings:Slider({
     Title = "Cancel Delay",
-    Placeholder = "1.6",
-    Default = tostring(BlatantConfig.CancelDelay),
+    Desc = "Delay between fishing cycles (lower = faster)",
+    Step = 0.1,
+    Value = {
+        Min = 0.5,
+        Max = 3.0,
+        Default = BlatantConfig.CancelDelay
+    },
     Callback = function(value)
-        local num = tonumber(value)
-        if num and num > 0 then
-            BlatantConfig.CancelDelay = num
-            WindUI:Notify({
-                Title = "Delay Updated",
-                Content = "Cancel delay set to " .. num,
-                Duration = 2,
-                Icon = "info"
-            })
-        end
+        BlatantConfig.CancelDelay = value
+        WindUI:Notify({
+            Title = "Setting Updated",
+            Content = "Cancel delay: " .. value .. "s",
+            Duration = 2,
+            Icon = "info"
+        })
     end
 })
 
-blatant:Input({
+settings:Slider({
     Title = "Complete Delay",
-    Placeholder = "0.37",
-    Default = tostring(BlatantConfig.CompleteDelay),
+    Desc = "Delay before catching fish (lower = faster)",
+    Step = 0.05,
+    Value = {
+        Min = 0.1,
+        Max = 1.0,
+        Default = BlatantConfig.CompleteDelay
+    },
     Callback = function(value)
-        local num = tonumber(value)
-        if num and num > 0 then
-            BlatantConfig.CompleteDelay = num + 0.5
-            WindUI:Notify({
-                Title = "Delay Updated",
-                Content = "Complete delay set to " .. (num + 0.5),
-                Duration = 2,
-                Icon = "info"
-            })
-        end
+        BlatantConfig.CompleteDelay = value
+        WindUI:Notify({
+            Title = "Setting Updated",
+            Content = "Complete delay: " .. value .. "s",
+            Duration = 2,
+            Icon = "info"
+        })
+    end
+})
+
+settings:Slider({
+    Title = "Equip Delay",
+    Desc = "Delay for auto equip rod",
+    Step = 0.1,
+    Value = {
+        Min = 0.5,
+        Max = 2.0,
+        Default = BlatantConfig.EquipDelay
+    },
+    Callback = function(value)
+        BlatantConfig.EquipDelay = value
+        WindUI:Notify({
+            Title = "Setting Updated",
+            Content = "Equip delay: " .. value .. "s",
+            Duration = 2,
+            Icon = "info"
+        })
+    end
+})
+
+fishing:Divider()
+
+local advanced = fishing:Section({
+    Title = "Advanced Settings",
+    Icon = "settings",
+    TextXAlignment = "Left",
+    TextSize = 16
+})
+
+advanced:Slider({
+    Title = "Retry Attempts",
+    Desc = "Max retry when remote call fails",
+    Step = 1,
+    Value = {
+        Min = 1,
+        Max = 10,
+        Default = BlatantConfig.RetryAttempts
+    },
+    Callback = function(value)
+        BlatantConfig.RetryAttempts = value
+    end
+})
+
+advanced:Slider({
+    Title = "Retry Delay",
+    Desc = "Delay between retry attempts (seconds)",
+    Step = 0.01,
+    Value = {
+        Min = 0.01,
+        Max = 0.2,
+        Default = BlatantConfig.RetryDelay
+    },
+    Callback = function(value)
+        BlatantConfig.RetryDelay = value
+    end
+})
+
+fishing:Divider()
+
+local stats = fishing:Section({
+    Title = "Statistics",
+    Icon = "bar-chart",
+    TextXAlignment = "Left",
+    TextSize = 16
+})
+
+stats:Button({
+    Title = "View Stats",
+    Desc = "Show current fishing statistics",
+    Icon = "activity",
+    Callback = function()
+        local successRate = BlatantStats.TotalCatches > 0 
+            and math.floor((BlatantStats.TotalCatches / (BlatantStats.TotalCatches + BlatantStats.FailedAttempts)) * 100)
+            or 0
+        
+        local runtime = BlatantStats.LastCatchTime > 0 
+            and (os.time() - BlatantStats.LastCatchTime)
+            or 0
+        
+        WindUI:Notify({
+            Title = "Fishing Statistics",
+            Content = string.format(
+                "Total Catches: %d\nFailed: %d\nSuccess Rate: %d%%\nLast catch: %ds ago",
+                BlatantStats.TotalCatches,
+                BlatantStats.FailedAttempts,
+                successRate,
+                runtime
+            ),
+            Duration = 8,
+            Icon = "info"
+        })
+    end
+})
+
+stats:Button({
+    Title = "Reset Stats",
+    Desc = "Clear fishing statistics",
+    Icon = "refresh-cw",
+    Callback = function()
+        BlatantStats.TotalCatches = 0
+        BlatantStats.FailedAttempts = 0
+        BlatantStats.LastCatchTime = 0
+        
+        WindUI:Notify({
+            Title = "Stats Reset",
+            Content = "All statistics cleared",
+            Duration = 2,
+            Icon = "check"
+        })
     end
 })
