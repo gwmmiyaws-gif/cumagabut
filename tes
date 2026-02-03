@@ -32,20 +32,27 @@ local Main = Window:Tab({
 local Running = false
 _G.DelayComplete = 0.01
 _G.DelayCycle = 0.1
+_G.SpamCount = 50 -- jumlah spam per cycle
 
 local function AutoFish()
     while Running do
         pcall(function()
-            local now = workspace:GetServerTimeNow()
+            -- SPAM PHASE - spam ChargeRod + StartMini
+            for i = 1, _G.SpamCount do
+                local now = workspace:GetServerTimeNow()
+                
+                pcall(function()
+                    api.Functions.ChargeRod:InvokeServer(now + (i * 0.000001))
+                end)
+                
+                pcall(function()
+                    api.Functions.StartMini:InvokeServer(-1, 1, now + (i * 0.000001))
+                end)
+                
+                task.wait(_G.DelayComplete)
+            end
             
-            -- Spam ChargeRod + StartMini
-            api.Functions.ChargeRod:InvokeServer(now)
-            task.wait(_G.DelayComplete)
-            
-            api.Functions.StartMini:InvokeServer(-1, 1, now)
-            task.wait(_G.DelayComplete)
-            
-            -- Complete
+            -- Complete catch
             api.Functions.CatchFish:InvokeServer()
             
             task.wait(_G.DelayCycle)
@@ -84,6 +91,18 @@ Main:Input({
         local n = tonumber(v)
         if n and n >= 0 then
             _G.DelayCycle = n
+        end
+    end,
+})
+
+Main:Input({
+    Title = "Spam Count",
+    Description = "Jumlah spam per cycle",
+    Value = "50",
+    Callback = function(v)
+        local n = tonumber(v)
+        if n and n > 0 then
+            _G.SpamCount = n
         end
     end,
 })
