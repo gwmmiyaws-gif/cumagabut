@@ -21,7 +21,12 @@ local Settings = {
     BlatantMode = false,
     ChargeTime = 1,
     CastDelay = 0.5,
-    CatchDelay = 0.3,
+    CompleteDelay = 0.3,
+    CycleDelay = 0.5,
+    MinigameParam1Min = 5,
+    MinigameParam1Max = 10,
+    MinigameParam2Min = 0,
+    MinigameParam2Max = 0.1,
     WebhookEnabled = false,
     WebhookURL = ""
 }
@@ -38,7 +43,7 @@ local Window = WindUI:CreateWindow({
     Icon = "🎣",
     Author = "Patungin",
     Folder = "AutoFishConfig",
-    Size = UDim2.fromOffset(480, 520),
+    Size = UDim2.fromOffset(500, 600),
     KeySystem = false
 })
 
@@ -50,32 +55,35 @@ local MainTab = Window:Tab({
 
 -- Auto Fish Section
 local FishSection = MainTab:Section({
-    Title = "Auto Fishing"
+    Title = "Auto Fishing Controls"
 })
 
-FishSection:Toggle({
+local AutoFishToggle = FishSection:Toggle({
     Title = "Enable Auto Fish",
     Default = false,
     Callback = function(value)
         Settings.AutoFish = value
         if value then
+            Stats.StartTime = tick()
+            Stats.FishCaught = 0
             startAutoFish()
         end
     end
 })
 
-FishSection:Toggle({
-    Title = "Blatant Mode",
-    Description = "Instant everything (risky)",
-    Default = false,
-    Callback = function(value)
-        Settings.BlatantMode = value
+local BlatantButton = FishSection:Button({
+    Title = "Blatant Mode: OFF",
+    Callback = function()
+        Settings.BlatantMode = not Settings.BlatantMode
+        BlatantButton:Set({
+            Title = Settings.BlatantMode and "Blatant Mode: ON" or "Blatant Mode: OFF"
+        })
     end
 })
 
 -- Timing Settings Section
 local TimingSection = MainTab:Section({
-    Title = "Timing Settings"
+    Title = "Timing Settings (Legit Mode)"
 })
 
 TimingSection:Slider({
@@ -100,14 +108,86 @@ TimingSection:Slider({
     end
 })
 
-TimingSection:Slider({
-    Title = "Catch Delay",
-    Description = "Delay before catching",
-    Min = 0.1,
-    Max = 2,
-    Default = 0.3,
+TimingSection:Input({
+    Title = "Complete Delay",
+    Description = "Delay before completing catch (in seconds)",
+    Placeholder = "0.3",
+    Default = "0.3",
     Callback = function(value)
-        Settings.CatchDelay = value
+        local num = tonumber(value)
+        if num then
+            Settings.CompleteDelay = num
+        end
+    end
+})
+
+TimingSection:Input({
+    Title = "Cycle Delay",
+    Description = "Delay between fishing cycles (in seconds)",
+    Placeholder = "0.5",
+    Default = "0.5",
+    Callback = function(value)
+        local num = tonumber(value)
+        if num then
+            Settings.CycleDelay = num
+        end
+    end
+})
+
+-- Advanced Settings
+local AdvancedSection = MainTab:Section({
+    Title = "Advanced Settings"
+})
+
+AdvancedSection:Input({
+    Title = "Minigame Param 1 Min",
+    Description = "Minimum value for first parameter",
+    Placeholder = "5",
+    Default = "5",
+    Callback = function(value)
+        local num = tonumber(value)
+        if num then
+            Settings.MinigameParam1Min = num
+        end
+    end
+})
+
+AdvancedSection:Input({
+    Title = "Minigame Param 1 Max",
+    Description = "Maximum value for first parameter",
+    Placeholder = "10",
+    Default = "10",
+    Callback = function(value)
+        local num = tonumber(value)
+        if num then
+            Settings.MinigameParam1Max = num
+        end
+    end
+})
+
+AdvancedSection:Input({
+    Title = "Minigame Param 2 Min",
+    Description = "Minimum value for second parameter",
+    Placeholder = "0",
+    Default = "0",
+    Callback = function(value)
+        local num = tonumber(value)
+        if num then
+            Settings.MinigameParam2Min = num
+        end
+    end
+})
+
+AdvancedSection:Input({
+    Title = "Minigame Param 2 Max",
+    Description = "Maximum value for second parameter",
+    Placeholder = "0.1",
+    Default = "0.1",
+    Callback = function(value)
+        local num = tonumber(value)
+        if num then
+            Settings.MinigameParam2Max = num
+        end
     end
 })
 
@@ -121,7 +201,11 @@ local FishLabel = StatsSection:Label({
 })
 
 local TimeLabel = StatsSection:Label({
-    Title = "Runtime: 0s"
+    Title = "Runtime: 00:00:00"
+})
+
+local StatusLabel = StatsSection:Label({
+    Title = "Status: Idle"
 })
 
 -- Webhook Tab
@@ -144,7 +228,8 @@ WebhookSection:Toggle({
 
 WebhookSection:Input({
     Title = "Webhook URL",
-    Placeholder = "Enter webhook URL",
+    Description = "Paste your Discord webhook URL",
+    Placeholder = "https://discord.com/api/webhooks/...",
     Callback = function(value)
         Settings.WebhookURL = value
     end
@@ -153,7 +238,20 @@ WebhookSection:Input({
 WebhookSection:Button({
     Title = "Test Webhook",
     Callback = function()
-        sendWebhook("🧪 Test notification from Auto Fishing!")
+        if Settings.WebhookURL ~= "" then
+            sendWebhook("🧪 Test notification from Auto Fishing!")
+            Window:Notify({
+                Title = "Webhook Test",
+                Content = "Test message sent!",
+                Duration = 3
+            })
+        else
+            Window:Notify({
+                Title = "Error",
+                Content = "Please enter webhook URL first!",
+                Duration = 3
+            })
+        end
     end
 })
 
@@ -161,25 +259,28 @@ WebhookSection:Button({
 function sendWebhook(message)
     if not Settings.WebhookEnabled or Settings.WebhookURL == "" then return end
     
-    local data = {
-        content = message,
-        embeds = {{
-            title = "Auto Fishing Stats",
-            fields = {
-                {name = "Fish Caught", value = tostring(Stats.FishCaught), inline = true},
-                {name = "Runtime", value = formatTime(tick() - Stats.StartTime), inline = true}
-            },
-            color = 3447003,
-            timestamp = DateTime.now():ToIsoDate()
-        }}
-    }
-    
-    request({
-        Url = Settings.WebhookURL,
-        Method = "POST",
-        Headers = {["Content-Type"] = "application/json"},
-        Body = game:GetService("HttpService"):JSONEncode(data)
-    })
+    pcall(function()
+        local data = {
+            content = message,
+            embeds = {{
+                title = "🎣 Auto Fishing Stats",
+                fields = {
+                    {name = "Fish Caught", value = tostring(Stats.FishCaught), inline = true},
+                    {name = "Runtime", value = formatTime(tick() - Stats.StartTime), inline = true},
+                    {name = "Mode", value = Settings.BlatantMode and "Blatant" or "Legit", inline = true}
+                },
+                color = Settings.BlatantMode and 16711680 or 3447003,
+                timestamp = DateTime.now():ToIsoDate()
+            }}
+        }
+        
+        request({
+            Url = Settings.WebhookURL,
+            Method = "POST",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = game:GetService("HttpService"):JSONEncode(data)
+        })
+    end)
 end
 
 function formatTime(seconds)
@@ -193,50 +294,87 @@ function startAutoFish()
     spawn(function()
         while Settings.AutoFish do
             local success, err = pcall(function()
-                -- Charge Rod
-                Events.ChargeFishingRod:InvokeServer()
+                StatusLabel:Set("Status: Charging Rod...")
+                
+                -- Step 1: Charge Rod
+                local chargeTime = tick()
+                Events.ChargeFishingRod:InvokeServer(nil, nil, chargeTime, nil)
                 
                 if Settings.BlatantMode then
-                    -- Blatant: instant everything
                     task.wait(0.05)
-                    Events.RequestMinigame:InvokeServer()
-                    task.wait(0.05)
-                    Events.CatchCompleted:InvokeServer()
                 else
-                    -- Legit: dengan delays
                     task.wait(Settings.ChargeTime)
-                    task.wait(Settings.CastDelay)
-                    Events.RequestMinigame:InvokeServer()
-                    task.wait(Settings.CatchDelay)
-                    Events.CatchCompleted:InvokeServer()
                 end
+                
+                StatusLabel:Set("Status: Casting...")
+                
+                if not Settings.BlatantMode then
+                    task.wait(Settings.CastDelay)
+                end
+                
+                -- Step 2: Request Minigame dengan random parameters
+                local minigameTime = tick()
+                local param1 = math.random() * (Settings.MinigameParam1Max - Settings.MinigameParam1Min) + Settings.MinigameParam1Min
+                local param2 = math.random() * (Settings.MinigameParam2Max - Settings.MinigameParam2Min) + Settings.MinigameParam2Min
+                
+                StatusLabel:Set("Status: Minigame Started...")
+                Events.RequestMinigame:InvokeServer(param1, param2, minigameTime)
+                
+                if Settings.BlatantMode then
+                    task.wait(0.05)
+                else
+                    task.wait(Settings.CompleteDelay)
+                end
+                
+                -- Step 3: Complete Catch
+                StatusLabel:Set("Status: Catching Fish...")
+                Events.CatchCompleted:InvokeServer()
                 
                 -- Update stats
                 Stats.FishCaught += 1
                 FishLabel:Set("Fish Caught: " .. Stats.FishCaught)
+                StatusLabel:Set("Status: Fish Caught! (" .. Stats.FishCaught .. ")")
                 
-                -- Webhook setiap 10 fish
+                -- Webhook notification every 10 fish
                 if Stats.FishCaught % 10 == 0 then
-                    sendWebhook("🎣 Caught " .. Stats.FishCaught .. " fish!")
+                    sendWebhook("🎣 Caught **" .. Stats.FishCaught .. "** fish! Still farming...")
                 end
                 
-                task.wait(0.5) -- Cooldown
+                -- Cycle delay
+                if Settings.BlatantMode then
+                    task.wait(0.1)
+                else
+                    task.wait(Settings.CycleDelay)
+                end
             end)
             
             if not success then
-                warn("Error in auto fish loop:", err)
-                task.wait(1)
+                warn("Auto Fish Error:", err)
+                StatusLabel:Set("Status: Error - " .. tostring(err))
+                task.wait(2)
             end
         end
+        
+        StatusLabel:Set("Status: Stopped")
     end)
 end
 
--- Update runtime
+-- Update runtime display
 spawn(function()
     while true do
-        TimeLabel:Set("Runtime: " .. formatTime(tick() - Stats.StartTime))
+        if Settings.AutoFish then
+            TimeLabel:Set("Runtime: " .. formatTime(tick() - Stats.StartTime))
+        end
         task.wait(1)
     end
 end)
 
-print("Auto Fishing loaded! Made by Patungin")
+-- Notification on load
+Window:Notify({
+    Title = "Auto Fishing Loaded!",
+    Content = "Made by Patungin | Ready to farm!",
+    Duration = 5
+})
+
+print("🎣 Auto Fishing Script Loaded!")
+print("Made by Patungin")
