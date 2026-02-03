@@ -1,136 +1,242 @@
--- MechaPowerBot Fish It - FIXED dengan Parameter Aktual
--- PARAMETER BARU DARI SIMPLESPY: [-1.233, 0.167, 1770117315.399]
+-- Load Wind UI
+local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
 
-local Players = game:GetService("Players")
+-- Services
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local localPlayer = Players.LocalPlayer
+local Players = game:GetService("Players")
+local Player = Players.LocalPlayer
 
--- 1. AMBIL REMOTE FUNCTION dengan path yang valid dari log
-local net = ReplicatedStorage.Packages._Index["sleitnick_net@0.2.0"].net
-local chargeRod = net["RF/ChargeFishingRod"]
-local startMinigame = net["RF/RequestFishingMinigameStarted"]
-local catchFish = net["RF/CatchFishCompleted"] -- Opsional, cek ketersediaan
-
--- 2. PARAMETER BARU YANG BERFUNGSI (Dari Log SimpleSpy Anda)
-local activeParams = {
-    pos = -1.233184814453125,      -- Parameter 1: Posisi
-    charge = 0.16703444273073642,  -- Parameter 2: Nilai Charge
-    seed = 1770117315.398604       -- Parameter 3: Random Seed
+-- Events
+local NetPath = ReplicatedStorage.Packages._Index["sleitnick_net@0.2.0"].net
+local Events = {
+    ChargeFishingRod = NetPath["RF/ChargeFishingRod"],
+    RequestMinigame = NetPath["RF/RequestFishingMinigameStarted"],
+    CatchCompleted = NetPath["RF/CatchFishCompleted"],
+    CancelFishing = NetPath["RF/CancelFishingInputs"]
 }
 
--- 3. FUNGSI MEMANCING DASAR YANG SUDAH TERBUKTI
-local isFishing = false
-local fishingThread = nil
+-- Settings
+local Settings = {
+    AutoFish = false,
+    BlatantMode = false,
+    ChargeTime = 1,
+    CastDelay = 0.5,
+    CatchDelay = 0.3,
+    WebhookEnabled = false,
+    WebhookURL = ""
+}
 
-local function doSingleFishingAttempt()
-    -- Langkah 1: Charge rod
-    local success1 = pcall(function()
-        chargeRod:InvokeServer()
-        return true
-    end)
-    
-    if not success1 then return false end
-    
-    -- Langkah 2: Start minigame dengan PARAMETER BARU
-    local success2 = pcall(function()
-        startMinigame:InvokeServer(activeParams.pos, activeParams.charge, activeParams.seed)
-        return true
-    end)
-    
-    if not success2 then return false end
-    
-    -- Langkah 3: Complete catch (jika remote tersedia)
-    if catchFish then
-        pcall(function()
-            catchFish:InvokeServer()
-        end)
+-- Stats
+local Stats = {
+    FishCaught = 0,
+    StartTime = tick()
+}
+
+-- Create Window
+local Window = WindUI:CreateWindow({
+    Title = "Auto Fishing",
+    Icon = "🎣",
+    Author = "Patungin",
+    Folder = "AutoFishConfig",
+    Size = UDim2.fromOffset(480, 520),
+    KeySystem = false
+})
+
+-- Main Tab
+local MainTab = Window:Tab({
+    Title = "Main",
+    Icon = "home"
+})
+
+-- Auto Fish Section
+local FishSection = MainTab:Section({
+    Title = "Auto Fishing"
+})
+
+FishSection:Toggle({
+    Title = "Enable Auto Fish",
+    Default = false,
+    Callback = function(value)
+        Settings.AutoFish = value
+        if value then
+            startAutoFish()
+        end
     end
+})
+
+FishSection:Toggle({
+    Title = "Blatant Mode",
+    Description = "Instant everything (risky)",
+    Default = false,
+    Callback = function(value)
+        Settings.BlatantMode = value
+    end
+})
+
+-- Timing Settings Section
+local TimingSection = MainTab:Section({
+    Title = "Timing Settings"
+})
+
+TimingSection:Slider({
+    Title = "Charge Time",
+    Description = "Rod charge duration",
+    Min = 0.1,
+    Max = 3,
+    Default = 1,
+    Callback = function(value)
+        Settings.ChargeTime = value
+    end
+})
+
+TimingSection:Slider({
+    Title = "Cast Delay",
+    Description = "Delay before casting",
+    Min = 0.1,
+    Max = 2,
+    Default = 0.5,
+    Callback = function(value)
+        Settings.CastDelay = value
+    end
+})
+
+TimingSection:Slider({
+    Title = "Catch Delay",
+    Description = "Delay before catching",
+    Min = 0.1,
+    Max = 2,
+    Default = 0.3,
+    Callback = function(value)
+        Settings.CatchDelay = value
+    end
+})
+
+-- Stats Section
+local StatsSection = MainTab:Section({
+    Title = "Statistics"
+})
+
+local FishLabel = StatsSection:Label({
+    Title = "Fish Caught: 0"
+})
+
+local TimeLabel = StatsSection:Label({
+    Title = "Runtime: 0s"
+})
+
+-- Webhook Tab
+local WebhookTab = Window:Tab({
+    Title = "Webhook",
+    Icon = "bell"
+})
+
+local WebhookSection = WebhookTab:Section({
+    Title = "Discord Webhook"
+})
+
+WebhookSection:Toggle({
+    Title = "Enable Webhook",
+    Default = false,
+    Callback = function(value)
+        Settings.WebhookEnabled = value
+    end
+})
+
+WebhookSection:Input({
+    Title = "Webhook URL",
+    Placeholder = "Enter webhook URL",
+    Callback = function(value)
+        Settings.WebhookURL = value
+    end
+})
+
+WebhookSection:Button({
+    Title = "Test Webhook",
+    Callback = function()
+        sendWebhook("🧪 Test notification from Auto Fishing!")
+    end
+})
+
+-- Functions
+function sendWebhook(message)
+    if not Settings.WebhookEnabled or Settings.WebhookURL == "" then return end
     
-    return true
+    local data = {
+        content = message,
+        embeds = {{
+            title = "Auto Fishing Stats",
+            fields = {
+                {name = "Fish Caught", value = tostring(Stats.FishCaught), inline = true},
+                {name = "Runtime", value = formatTime(tick() - Stats.StartTime), inline = true}
+            },
+            color = 3447003,
+            timestamp = DateTime.now():ToIsoDate()
+        }}
+    }
+    
+    request({
+        Url = Settings.WebhookURL,
+        Method = "POST",
+        Headers = {["Content-Type"] = "application/json"},
+        Body = game:GetService("HttpService"):JSONEncode(data)
+    })
 end
 
-local function startFishingLoop(speed)
-    if isFishing then return end
-    
-    isFishing = true
-    local delay = 1 / speed  -- Konversi dari "catch/detik" ke delay
-    
-    print("[FIXED SCRIPT] Memulai dengan parameter baru:")
-    print("   Pos: " .. activeParams.pos)
-    print("   Charge: " .. activeParams.charge)
-    print("   Seed: " .. activeParams.seed)
-    print("   Delay: " .. delay .. "s (" .. speed .. " catch/detik)")
-    
-    fishingThread = task.spawn(function()
-        while isFishing do
-            doSingleFishingAttempt()
-            task.wait(delay)
+function formatTime(seconds)
+    local hours = math.floor(seconds / 3600)
+    local mins = math.floor((seconds % 3600) / 60)
+    local secs = math.floor(seconds % 60)
+    return string.format("%02d:%02d:%02d", hours, mins, secs)
+end
+
+function startAutoFish()
+    spawn(function()
+        while Settings.AutoFish do
+            local success, err = pcall(function()
+                -- Charge Rod
+                Events.ChargeFishingRod:InvokeServer()
+                
+                if Settings.BlatantMode then
+                    -- Blatant: instant everything
+                    task.wait(0.05)
+                    Events.RequestMinigame:InvokeServer()
+                    task.wait(0.05)
+                    Events.CatchCompleted:InvokeServer()
+                else
+                    -- Legit: dengan delays
+                    task.wait(Settings.ChargeTime)
+                    task.wait(Settings.CastDelay)
+                    Events.RequestMinigame:InvokeServer()
+                    task.wait(Settings.CatchDelay)
+                    Events.CatchCompleted:InvokeServer()
+                end
+                
+                -- Update stats
+                Stats.FishCaught += 1
+                FishLabel:Set("Fish Caught: " .. Stats.FishCaught)
+                
+                -- Webhook setiap 10 fish
+                if Stats.FishCaught % 10 == 0 then
+                    sendWebhook("🎣 Caught " .. Stats.FishCaught .. " fish!")
+                end
+                
+                task.wait(0.5) -- Cooldown
+            end)
+            
+            if not success then
+                warn("Error in auto fish loop:", err)
+                task.wait(1)
+            end
         end
     end)
 end
 
-local function stopFishingLoop()
-    isFishing = false
-    if fishingThread then
-        task.cancel(fishingThread)
-        fishingThread = nil
+-- Update runtime
+spawn(function()
+    while true do
+        TimeLabel:Set("Runtime: " .. formatTime(tick() - Stats.StartTime))
+        task.wait(1)
     end
-    print("[FIXED SCRIPT] Berhenti.")
-end
-
--- 4. GUI SEDERHANA UNTUK KONTROL
-local ScreenGui = Instance.new("ScreenGui")
-local MainFrame = Instance.new("Frame")
-local StartBtn = Instance.new("TextButton")
-local StopBtn = Instance.new("TextButton")
-local StatusLabel = Instance.new("TextLabel")
-
-ScreenGui.Parent = localPlayer:WaitForChild("PlayerGui")
-ScreenGui.ResetOnSpawn = false
-
-MainFrame.Parent = ScreenGui
-MainFrame.Size = UDim2.new(0, 200, 0, 150)
-MainFrame.Position = UDim2.new(0.8, 0, 0.5, -75)
-MainFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-
-StartBtn.Parent = MainFrame
-StartBtn.Text = "▶ START FISHING"
-StartBtn.Size = UDim2.new(0.9, 0, 0, 40)
-StartBtn.Position = UDim2.new(0.05, 0, 0.1, 0)
-StartBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
-
-StopBtn.Parent = MainFrame
-StopBtn.Text = "⏹ STOP"
-StopBtn.Size = UDim2.new(0.9, 0, 0, 40)
-StopBtn.Position = UDim2.new(0.05, 0, 0.4, 0)
-StopBtn.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
-
-StatusLabel.Parent = MainFrame
-StatusLabel.Text = "Status: SIAP\nParameter: TERBARU"
-StatusLabel.Size = UDim2.new(0.9, 0, 0, 50)
-StatusLabel.Position = UDim2.new(0.05, 0, 0.75, 0)
-StatusLabel.BackgroundTransparency = 1
-StatusLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
-StatusLabel.TextWrapped = true
-
--- 5. EVENT HANDLERS
-StartBtn.MouseButton1Click:Connect(function()
-    startFishingLoop(50) -- 50 catch/detik untuk awal
-    StatusLabel.Text = "Status: BERJALAN\nKecepatan: 50/detik"
-    StartBtn.BackgroundColor3 = Color3.fromRGB(0, 100, 0)
 end)
 
-StopBtn.MouseButton1Click:Connect(function()
-    stopFishingLoop()
-    StatusLabel.Text = "Status: BERHENTI\nParameter: TERBARU"
-    StartBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
-end)
-
--- 6. INFORMASI AWAL
-print("========================================")
-print("FISH IT SCRIPT - FIXED & VERIFIED")
-print("RemoteFunction: RF/RequestFishingMinigameStarted")
-print("Parameter 1 (pos): " .. activeParams.pos)
-print("Parameter 2 (charge): " .. activeParams.charge)
-print("Parameter 3 (seed): " .. activeParams.seed)
-print("========================================")
+print("Auto Fishing loaded! Made by Patungin")
