@@ -18,221 +18,291 @@ local api = {
 }
 
 local Window = WindUI:CreateWindow({
-    Title = "Fish Logger",
+    Title = "Fish Call Logger",
     Author = "Patungin",
     Folder = "FishLogger",
-    Size = UDim2.fromOffset(500, 450),
+    Size = UDim2.fromOffset(500, 400),
     ToggleKey = Enum.KeyCode.G,
 })
 
 local Main = Window:Tab({
     Title = "Logger",
-    Icon = "activity",
+    Icon = "file-text",
 })
 
-local Replay = Window:Tab({
-    Title = "Replay",
-    Icon = "play",
-})
+-- Storage
+local LoggedCalls = {}
+local IsLogging = false
+local LastCallTime = 0
+local LogStartTime = 0
 
--- Storage untuk recorded data
-local RecordedCalls = {}
-local IsRecording = false
-local IsReplaying = false
-local RecordStartTime = 0
-
--- Statistik
+-- Stats
 local Stats = {
-    ChargeRodCalls = 0,
-    StartMiniCalls = 0,
-    CatchCalls = 0,
-    CancelCalls = 0,
     TotalCalls = 0,
-    AvgDelay = 0,
+    ChargeRod = 0,
+    StartMini = 0,
+    CatchFish = 0,
+    CancelFish = 0,
 }
 
--- Hook functions untuk detect calls
+-- Original functions
 local OriginalChargeRod = api.Functions.ChargeRod.InvokeServer
 local OriginalStartMini = api.Functions.StartMini.InvokeServer
 local OriginalCatchFish = api.Functions.CatchFish.InvokeServer
 local OriginalCancelFish = api.Functions.CancelFish.InvokeServer
 
-local function StartRecording()
-    RecordedCalls = {}
-    RecordStartTime = tick()
-    Stats.ChargeRodCalls = 0
-    Stats.StartMiniCalls = 0
-    Stats.CatchCalls = 0
-    Stats.CancelCalls = 0
+local function FormatArgs(args)
+    local formatted = {}
+    for i, v in ipairs(args) do
+        if type(v) == "number" then
+            formatted[i] = string.format("%.10f", v)
+        elseif v == nil then
+            formatted[i] = "nil"
+        else
+            formatted[i] = tostring(v)
+        end
+    end
+    return table.concat(formatted, ", ")
+end
+
+local function StartLogging()
+    LoggedCalls = {}
+    LogStartTime = tick()
+    LastCallTime = LogStartTime
     Stats.TotalCalls = 0
+    Stats.ChargeRod = 0
+    Stats.StartMini = 0
+    Stats.CatchFish = 0
+    Stats.CancelFish = 0
     
     -- Hook ChargeRod
     api.Functions.ChargeRod.InvokeServer = function(self, ...)
-        if IsRecording then
-            local timestamp = tick() - RecordStartTime
+        local result = OriginalChargeRod(self, ...)
+        
+        if IsLogging then
+            local now = tick()
+            local delta = now - LastCallTime
+            local timestamp = now - LogStartTime
             local args = {...}
             
-            table.insert(RecordedCalls, {
-                Type = "ChargeRod",
-                Timestamp = timestamp,
-                Args = args
-            })
+            local logEntry = string.format(
+                "[%.6fs] [Δ%.6fs] ChargeRod(%s)",
+                timestamp,
+                delta,
+                FormatArgs(args)
+            )
             
-            Stats.ChargeRodCalls = Stats.ChargeRodCalls + 1
+            table.insert(LoggedCalls, logEntry)
+            print(logEntry)
+            
+            Stats.ChargeRod = Stats.ChargeRod + 1
             Stats.TotalCalls = Stats.TotalCalls + 1
-            
-            print(string.format("[%.4fs] ChargeRod called | Args: %s", timestamp, table.concat(args, ", ")))
+            LastCallTime = now
         end
         
-        return OriginalChargeRod(self, ...)
+        return result
     end
     
     -- Hook StartMini
     api.Functions.StartMini.InvokeServer = function(self, ...)
-        if IsRecording then
-            local timestamp = tick() - RecordStartTime
+        local result = OriginalStartMini(self, ...)
+        
+        if IsLogging then
+            local now = tick()
+            local delta = now - LastCallTime
+            local timestamp = now - LogStartTime
             local args = {...}
             
-            table.insert(RecordedCalls, {
-                Type = "StartMini",
-                Timestamp = timestamp,
-                Args = args
-            })
+            local logEntry = string.format(
+                "[%.6fs] [Δ%.6fs] StartMini(%s)",
+                timestamp,
+                delta,
+                FormatArgs(args)
+            )
             
-            Stats.StartMiniCalls = Stats.StartMiniCalls + 1
+            table.insert(LoggedCalls, logEntry)
+            print(logEntry)
+            
+            Stats.StartMini = Stats.StartMini + 1
             Stats.TotalCalls = Stats.TotalCalls + 1
-            
-            print(string.format("[%.4fs] StartMini called | Args: %s", timestamp, table.concat(args, ", ")))
+            LastCallTime = now
         end
         
-        return OriginalStartMini(self, ...)
+        return result
     end
     
     -- Hook CatchFish
     api.Functions.CatchFish.InvokeServer = function(self, ...)
-        if IsRecording then
-            local timestamp = tick() - RecordStartTime
+        local result = OriginalCatchFish(self, ...)
+        
+        if IsLogging then
+            local now = tick()
+            local delta = now - LastCallTime
+            local timestamp = now - LogStartTime
             local args = {...}
             
-            table.insert(RecordedCalls, {
-                Type = "CatchFish",
-                Timestamp = timestamp,
-                Args = args
-            })
+            local logEntry = string.format(
+                "[%.6fs] [Δ%.6fs] CatchFish(%s)",
+                timestamp,
+                delta,
+                FormatArgs(args)
+            )
             
-            Stats.CatchCalls = Stats.CatchCalls + 1
+            table.insert(LoggedCalls, logEntry)
+            print(logEntry)
+            
+            Stats.CatchFish = Stats.CatchFish + 1
             Stats.TotalCalls = Stats.TotalCalls + 1
-            
-            print(string.format("[%.4fs] CatchFish called", timestamp))
+            LastCallTime = now
         end
         
-        return OriginalCatchFish(self, ...)
+        return result
     end
     
     -- Hook CancelFish
     api.Functions.CancelFish.InvokeServer = function(self, ...)
-        if IsRecording then
-            local timestamp = tick() - RecordStartTime
+        local result = OriginalCancelFish(self, ...)
+        
+        if IsLogging then
+            local now = tick()
+            local delta = now - LastCallTime
+            local timestamp = now - LogStartTime
             local args = {...}
             
-            table.insert(RecordedCalls, {
-                Type = "CancelFish",
-                Timestamp = timestamp,
-                Args = args
-            })
+            local logEntry = string.format(
+                "[%.6fs] [Δ%.6fs] CancelFish(%s)",
+                timestamp,
+                delta,
+                FormatArgs(args)
+            )
             
-            Stats.CancelCalls = Stats.CancelCalls + 1
+            table.insert(LoggedCalls, logEntry)
+            print(logEntry)
+            
+            Stats.CancelFish = Stats.CancelFish + 1
             Stats.TotalCalls = Stats.TotalCalls + 1
-            
-            print(string.format("[%.4fs] CancelFish called", timestamp))
+            LastCallTime = now
         end
         
-        return OriginalCancelFish(self, ...)
+        return result
     end
 end
 
-local function CalculateStats()
-    if #RecordedCalls < 2 then return end
-    
-    local totalDelay = 0
-    for i = 2, #RecordedCalls do
-        totalDelay = totalDelay + (RecordedCalls[i].Timestamp - RecordedCalls[i-1].Timestamp)
-    end
-    
-    Stats.AvgDelay = totalDelay / (#RecordedCalls - 1)
-end
-
-local function ReplayRecording()
-    if #RecordedCalls == 0 then
-        Window:Notify({
-            Title = "Error",
-            Content = "No recorded data to replay!",
-            Duration = 3
-        })
+local function ExportLog()
+    if #LoggedCalls == 0 then
+        print("No logged calls to export!")
         return
     end
     
-    task.spawn(function()
-        local replayStart = tick()
-        
-        for _, call in ipairs(RecordedCalls) do
-            if not IsReplaying then break end
-            
-            -- Wait until exact timestamp
-            local targetTime = replayStart + call.Timestamp
-            local waitTime = targetTime - tick()
-            if waitTime > 0 then
-                task.wait(waitTime)
-            end
-            
-            -- Execute call
-            pcall(function()
-                if call.Type == "ChargeRod" then
-                    api.Functions.ChargeRod:InvokeServer(unpack(call.Args))
-                elseif call.Type == "StartMini" then
-                    api.Functions.StartMini:InvokeServer(unpack(call.Args))
-                elseif call.Type == "CatchFish" then
-                    api.Functions.CatchFish:InvokeServer(unpack(call.Args))
-                elseif call.Type == "CancelFish" then
-                    api.Functions.CancelFish:InvokeServer(unpack(call.Args))
-                end
-                
-                print(string.format("[REPLAY %.4fs] %s executed", call.Timestamp, call.Type))
-            end)
-        end
-        
-        Window:Notify({
-            Title = "Replay Complete",
-            Content = "Replayed " .. #RecordedCalls .. " calls",
-            Duration = 3
-        })
-    end)
+    print("\n" .. string.rep("=", 80))
+    print("FISHING CALL LOG - Copy everything below this line")
+    print(string.rep("=", 80))
+    print("Total Calls:", Stats.TotalCalls)
+    print("Duration:", string.format("%.3fs", LoggedCalls[#LoggedCalls] and (tick() - LogStartTime) or 0))
+    print("\nBreakdown:")
+    print("  ChargeRod:", Stats.ChargeRod)
+    print("  StartMini:", Stats.StartMini)
+    print("  CatchFish:", Stats.CatchFish)
+    print("  CancelFish:", Stats.CancelFish)
+    print(string.rep("-", 80))
+    
+    for i, log in ipairs(LoggedCalls) do
+        print(log)
+    end
+    
+    print(string.rep("=", 80))
+    print("END OF LOG")
+    print(string.rep("=", 80) .. "\n")
 end
 
--- UI - Logger Tab
-local RecordSection = Main:Section({
-    Title = "Recording Controls"
+local function ExportAsCode()
+    if #LoggedCalls == 0 then
+        print("No logged calls to export!")
+        return
+    end
+    
+    print("\n" .. string.rep("=", 80))
+    print("LUA CODE - Copy everything below")
+    print(string.rep("=", 80))
+    print([[
+-- Auto-generated fishing pattern
+local function ReplayPattern()
+    local api = {
+        Functions = {
+            ChargeRod = game:GetService("ReplicatedStorage").Packages._Index["sleitnick_net@0.2.0"].net["RF/ChargeFishingRod"],
+            StartMini = game:GetService("ReplicatedStorage").Packages._Index["sleitnick_net@0.2.0"].net["RF/RequestFishingMinigameStarted"],
+            CatchFish = game:GetService("ReplicatedStorage").Packages._Index["sleitnick_net@0.2.0"].net["RF/CatchFishCompleted"],
+            CancelFish = game:GetService("ReplicatedStorage").Packages._Index["sleitnick_net@0.2.0"].net["RF/CancelFishingInputs"],
+        }
+    }
+    
+    local calls = {
+]])
+    
+    -- Parse dan export calls
+    for i, log in ipairs(LoggedCalls) do
+        local delta = log:match("%[Δ([%d%.]+)s%]")
+        local funcName = log:match("]%s(%w+)%(")
+        local args = log:match("%((.*)%)")
+        
+        if delta and funcName and args then
+            print(string.format('        {delta = %.6f, func = "%s", args = {%s}},', tonumber(delta), funcName, args))
+        end
+    end
+    
+    print([[    }
+    
+    for _, call in ipairs(calls) do
+        task.wait(call.delta)
+        
+        if call.func == "ChargeRod" then
+            api.Functions.ChargeRod:InvokeServer(unpack(call.args))
+        elseif call.func == "StartMini" then
+            api.Functions.StartMini:InvokeServer(unpack(call.args))
+        elseif call.func == "CatchFish" then
+            api.Functions.CatchFish:InvokeServer(unpack(call.args))
+        elseif call.func == "CancelFish" then
+            api.Functions.CancelFish:InvokeServer(unpack(call.args))
+        end
+    end
+end
+
+-- Run the pattern
+while true do
+    ReplayPattern()
+end
+]])
+    
+    print(string.rep("=", 80))
+    print("END OF CODE")
+    print(string.rep("=", 80) .. "\n")
+end
+
+-- UI
+local ControlSection = Main:Section({
+    Title = "Logging Controls"
 })
 
-RecordSection:Toggle({
-    Title = "Start Recording",
-    Description = "Record all fishing calls",
+ControlSection:Toggle({
+    Title = "Start Logging",
+    Description = "Log all fishing calls with delta timing",
     Default = false,
     Callback = function(state)
-        IsRecording = state
+        IsLogging = state
         
         if state then
-            StartRecording()
+            StartLogging()
+            print("\n[LOGGER] Started logging fishing calls...")
             Window:Notify({
-                Title = "Recording Started",
-                Content = "Now go fish manually!",
+                Title = "Logging Started",
+                Content = "Go fish manually! Check console (F9)",
                 Duration = 3
             })
         else
-            CalculateStats()
+            print("[LOGGER] Stopped logging")
             Window:Notify({
-                Title = "Recording Stopped",
-                Content = "Recorded " .. Stats.TotalCalls .. " calls",
+                Title = "Logging Stopped",
+                Content = "Logged " .. Stats.TotalCalls .. " calls",
                 Duration = 3
             })
         end
@@ -240,132 +310,85 @@ RecordSection:Toggle({
 })
 
 local StatsSection = Main:Section({
-    Title = "Recording Stats"
+    Title = "Statistics"
 })
 
-local TotalCallsLabel = StatsSection:Label({
+local TotalLabel = StatsSection:Label({
     Title = "Total Calls: 0"
 })
 
-local ChargeRodLabel = StatsSection:Label({
+local ChargeLabel = StatsSection:Label({
     Title = "ChargeRod: 0"
 })
 
-local StartMiniLabel = StatsSection:Label({
+local MiniLabel = StatsSection:Label({
     Title = "StartMini: 0"
 })
 
-local CatchFishLabel = StatsSection:Label({
+local CatchLabel = StatsSection:Label({
     Title = "CatchFish: 0"
 })
 
-local CancelFishLabel = StatsSection:Label({
+local CancelLabel = StatsSection:Label({
     Title = "CancelFish: 0"
 })
 
-local AvgDelayLabel = StatsSection:Label({
-    Title = "Avg Delay: 0.000s"
+local ExportSection = Main:Section({
+    Title = "Export Options"
 })
 
-local DataSection = Main:Section({
-    Title = "Data Management"
-})
-
-DataSection:Button({
-    Title = "Export to Console",
-    Description = "Print all recorded data",
+ExportSection:Button({
+    Title = "Export as Log",
+    Description = "Export readable log to console",
     Callback = function()
-        print("========== RECORDED FISHING DATA ==========")
-        print("Total Calls:", #RecordedCalls)
-        print("Duration:", RecordedCalls[#RecordedCalls] and RecordedCalls[#RecordedCalls].Timestamp or 0, "seconds")
-        print("\n--- Call Details ---")
-        
-        for i, call in ipairs(RecordedCalls) do
-            print(string.format("[%d] %.4fs | %s | Args: %s", 
-                i, 
-                call.Timestamp, 
-                call.Type, 
-                table.concat(call.Args or {}, ", ")
-            ))
-        end
-        
-        print("==========================================")
-        
+        ExportLog()
         Window:Notify({
             Title = "Exported",
-            Content = "Check console (F9)",
-            Duration = 2
+            Content = "Check console (F9) and copy the log",
+            Duration = 3
         })
     end
 })
 
-DataSection:Button({
-    Title = "Clear Recording",
+ExportSection:Button({
+    Title = "Export as Lua Code",
+    Description = "Export as executable Lua script",
     Callback = function()
-        RecordedCalls = {}
-        Stats.ChargeRodCalls = 0
-        Stats.StartMiniCalls = 0
-        Stats.CatchCalls = 0
-        Stats.CancelCalls = 0
+        ExportAsCode()
+        Window:Notify({
+            Title = "Exported",
+            Content = "Check console (F9) and copy the code",
+            Duration = 3
+        })
+    end
+})
+
+ExportSection:Button({
+    Title = "Clear Log",
+    Callback = function()
+        LoggedCalls = {}
         Stats.TotalCalls = 0
-        Stats.AvgDelay = 0
+        Stats.ChargeRod = 0
+        Stats.StartMini = 0
+        Stats.CatchFish = 0
+        Stats.CancelFish = 0
         
         Window:Notify({
             Title = "Cleared",
-            Content = "All recording data cleared",
+            Content = "All logs cleared",
             Duration = 2
         })
     end
 })
 
--- UI - Replay Tab
-local ReplaySection = Replay:Section({
-    Title = "Replay Controls"
-})
-
-ReplaySection:Toggle({
-    Title = "Start Replay",
-    Description = "Replay recorded fishing pattern",
-    Default = false,
-    Callback = function(state)
-        IsReplaying = state
-        
-        if state then
-            ReplayRecording()
-        end
-    end
-})
-
-local ReplayInfoSection = Replay:Section({
-    Title = "Replay Information"
-})
-
-local RecordedCallsLabel = ReplayInfoSection:Label({
-    Title = "Recorded Calls: 0"
-})
-
-local DurationLabel = ReplayInfoSection:Label({
-    Title = "Duration: 0.00s"
-})
-
--- Update stats loop
+-- Update stats
 spawn(function()
     while true do
-        TotalCallsLabel:Set("Total Calls: " .. Stats.TotalCalls)
-        ChargeRodLabel:Set("ChargeRod: " .. Stats.ChargeRodCalls)
-        StartMiniLabel:Set("StartMini: " .. Stats.StartMiniCalls)
-        CatchFishLabel:Set("CatchFish: " .. Stats.CatchCalls)
-        CancelFishLabel:Set("CancelFish: " .. Stats.CancelCalls)
-        AvgDelayLabel:Set(string.format("Avg Delay: %.4fs", Stats.AvgDelay))
-        
-        RecordedCallsLabel:Set("Recorded Calls: " .. #RecordedCalls)
-        
-        if #RecordedCalls > 0 then
-            local duration = RecordedCalls[#RecordedCalls].Timestamp
-            DurationLabel:Set(string.format("Duration: %.2fs", duration))
-        else
-            DurationLabel:Set("Duration: 0.00s")
-        end
+        TotalLabel:Set("Total Calls: " .. Stats.TotalCalls)
+        ChargeLabel:Set("ChargeRod: " .. Stats.ChargeRod)
+        MiniLabel:Set("StartMini: " .. Stats.StartMini)
+        CatchLabel:Set("CatchFish: " .. Stats.CatchFish)
+        CancelLabel:Set("CancelFish: " .. Stats.CancelFish)
         
         task.wait(0.1)
     end
@@ -373,12 +396,15 @@ end)
 
 Window:Notify({
     Title = "Fish Logger Loaded!",
-    Content = "Record your fishing pattern & replay it",
+    Content = "Record calls with delta timing",
     Duration = 5
 })
 
-print("🎣 Fish Logger & Replayer Loaded!")
-print("1. Toggle 'Start Recording'")
-print("2. Fish manually in-game")
-print("3. Stop recording")
-print("4. Go to Replay tab and toggle 'Start Replay'")
+print("🎣 Fish Call Logger Loaded!")
+print("Press F9 to open console")
+print("\nInstructions:")
+print("1. Toggle 'Start Logging'")
+print("2. Fish manually (1-2 cycles)")
+print("3. Toggle off logging")
+print("4. Click 'Export as Log' or 'Export as Lua Code'")
+print("5. Copy from console")
