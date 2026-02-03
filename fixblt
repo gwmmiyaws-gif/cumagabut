@@ -14,28 +14,13 @@ local hrp = character:WaitForChild("HumanoidRootPart")
 wait(1)
 
 local Net = svc.RS:FindFirstChild("Packages")
-if not Net then
-    warn("Packages not found")
-    return
-end
-
+if not Net then warn("Packages not found") return end
 Net = Net:FindFirstChild("_Index")
-if not Net then
-    warn("_Index not found")
-    return
-end
-
+if not Net then warn("_Index not found") return end
 Net = Net:FindFirstChild("sleitnick_net@0.2.0")
-if not Net then
-    warn("sleitnick_net not found")
-    return
-end
-
+if not Net then warn("sleitnick_net not found") return end
 Net = Net:FindFirstChild("net")
-if not Net then
-    warn("net not found")
-    return
-end
+if not Net then warn("net not found") return end
 
 local Window = WindUI:CreateWindow({
     Title = "LS Hub - Fish It",
@@ -60,13 +45,15 @@ local Fish10 = Window:Tab({
 })
 
 local Running = false
+local CatchState = 1
 
 _G.DelayComplete = 0
 _G.DelayCycle = 0.1
+_G.SpamCount = 50
 
 Fish10:Input({
     Title = "Delay Complete",
-    Description = "Delay per action",
+    Description = "Delay per spam call",
     Value = "0",
     Callback = function(v)
         _G.DelayComplete = tonumber(v) or 0
@@ -75,10 +62,19 @@ Fish10:Input({
 
 Fish10:Input({
     Title = "Delay Cycle", 
-    Description = "Delay cycle",
+    Description = "Delay sebelum catch/cancel",
     Value = "0.1",
     Callback = function(v)
         _G.DelayCycle = tonumber(v) or 0.1
+    end,
+})
+
+Fish10:Input({
+    Title = "Spam Count",
+    Description = "Berapa kali spam charge+start",
+    Value = "50",
+    Callback = function(v)
+        _G.SpamCount = tonumber(v) or 50
     end,
 })
 
@@ -102,45 +98,61 @@ Fish10:Toggle({
                 end
                 
                 while Running do
-                    if ChargeRod then
-                        spawn(function()
-                            pcall(function()
-                                ChargeRod:InvokeServer(workspace:GetServerTimeNow())
+                    for i = 1, _G.SpamCount do
+                        if not Running then break end
+                        
+                        if ChargeRod then
+                            spawn(function()
+                                pcall(function()
+                                    ChargeRod:InvokeServer(workspace:GetServerTimeNow())
+                                end)
                             end)
-                        end)
-                    end
-                    
-                    if _G.DelayComplete > 0 then wait(_G.DelayComplete) end
-                    
-                    if StartMini then
-                        spawn(function()
-                            pcall(function()
-                                StartMini:InvokeServer(-1, 1, workspace:GetServerTimeNow())
+                        end
+                        
+                        if StartMini then
+                            spawn(function()
+                                pcall(function()
+                                    StartMini:InvokeServer(-1, 1, workspace:GetServerTimeNow())
+                                end)
                             end)
-                        end)
-                    end
-                    
-                    if _G.DelayComplete > 0 then wait(_G.DelayComplete) end
-                    
-                    if CatchFish then
-                        spawn(function()
-                            pcall(function()
-                                CatchFish:InvokeServer()
-                            end)
-                        end)
-                    end
-                    
-                    if _G.DelayComplete > 0 then wait(_G.DelayComplete) end
-                    
-                    if CancelFish then
-                        spawn(function()
-                            pcall(function()
-                                CancelFish:InvokeServer()
-                            end)
-                        end)
+                        end
+                        
+                        if _G.DelayComplete > 0 then wait(_G.DelayComplete) end
                     end
                     
                     wait(_G.DelayCycle)
+                    
+                    if CatchState == 1 then
+                        if CatchFish then
+                            pcall(function()
+                                CatchFish:InvokeServer()
+                            end)
+                        end
+                        CatchState = 2
+                    elseif CatchState == 2 then
+                        if CancelFish then
+                            pcall(function()
+                                CancelFish:InvokeServer()
+                            end)
+                        end
+                        CatchState = 3
+                    elseif CatchState == 3 then
+                        if CatchFish then
+                            pcall(function()
+                                CatchFish:InvokeServer()
+                            end)
+                        end
+                        CatchState = 4
+                    else
+                        if CancelFish then
+                            pcall(function()
+                                CancelFish:InvokeServer()
+                            end)
+                        end
+                        CatchState = 1
+                    end
+                    
+                    wait(0.05)
                 end
             end)
         end
