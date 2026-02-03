@@ -46,24 +46,24 @@ local Fish10 = Window:Tab({
 
 local Running = false
 
-_G.DelayComplete = 0
-_G.DelayCycle = 0.1
+_G.DelayComplete = 0.03
+_G.DelayCycle = 2
 
 Fish10:Input({
     Title = "Delay Complete",
-    Description = "Delay spam charge+start",
-    Value = "0",
+    Description = "Delay spam charge+start (cepet)",
+    Value = "0.03",
     Callback = function(v)
-        _G.DelayComplete = tonumber(v) or 0
+        _G.DelayComplete = tonumber(v) or 0.03
     end,
 })
 
 Fish10:Input({
     Title = "Delay Cycle", 
-    Description = "Delay cycle",
-    Value = "0.1",
+    Description = "Delay catch/cancel (slow)",
+    Value = "2",
     Callback = function(v)
-        _G.DelayCycle = tonumber(v) or 0.1
+        _G.DelayCycle = tonumber(v) or 2
     end,
 })
 
@@ -78,8 +78,6 @@ Fish10:Toggle({
                 local EquipTool = Net:FindFirstChild("RE/EquipToolFromHotbar")
                 local ChargeRod = Net:FindFirstChild("RF/ChargeFishingRod")
                 local StartMini = Net:FindFirstChild("RF/RequestFishingMinigameStarted")
-                local CatchFish = Net:FindFirstChild("RF/CatchFishCompleted")
-                local CancelFish = Net:FindFirstChild("RF/CancelFishingInputs")
                 
                 if EquipTool then
                     pcall(function() EquipTool:FireServer(1) end)
@@ -87,10 +85,12 @@ Fish10:Toggle({
                 end
                 
                 while Running do
+                    local now = workspace:GetServerTimeNow()
+                    
                     if ChargeRod then
                         task.spawn(function()
                             pcall(function()
-                                ChargeRod:InvokeServer(workspace:GetServerTimeNow())
+                                ChargeRod:InvokeServer(now)
                             end)
                         end)
                     end
@@ -98,16 +98,12 @@ Fish10:Toggle({
                     if StartMini then
                         task.spawn(function()
                             pcall(function()
-                                StartMini:InvokeServer(-1, 1, workspace:GetServerTimeNow())
+                                StartMini:InvokeServer(-1, 1, now)
                             end)
                         end)
                     end
                     
-                    if _G.DelayComplete > 0 then 
-                        task.wait(_G.DelayComplete) 
-                    else
-                        task.wait()
-                    end
+                    task.wait(_G.DelayComplete)
                 end
             end)
             
@@ -117,23 +113,24 @@ Fish10:Toggle({
                 
                 task.wait(1)
                 
+                local useCancel = false
+                
                 while Running do
-                    if CatchFish then
-                        pcall(function()
-                            CatchFish:InvokeServer()
-                        end)
+                    if useCancel then
+                        if CancelFish then
+                            pcall(function()
+                                CancelFish:InvokeServer()
+                            end)
+                        end
+                    else
+                        if CatchFish then
+                            pcall(function()
+                                CatchFish:InvokeServer()
+                            end)
+                        end
                     end
                     
-                    task.wait(_G.DelayCycle)
-                    
-                    if not Running then break end
-                    
-                    if CancelFish then
-                        pcall(function()
-                            CancelFish:InvokeServer()
-                        end)
-                    end
-                    
+                    useCancel = not useCancel
                     task.wait(_G.DelayCycle)
                 end
             end)
