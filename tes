@@ -12,40 +12,30 @@ do
     end
 end
 
--- [[ Services Caller Shorcut ]]
 local svc = {
-	Players = game:GetService("Players"),
-	RS = game:GetService("ReplicatedStorage"),
+    Players = game:GetService("Players"),
+    RS = game:GetService("ReplicatedStorage"),
 }
 
--- [[ Local Player + Hrp ]]
 local player = svc.Players.LocalPlayer
 local hrp = player.Character and player.Character:WaitForChild("HumanoidRootPart") or player.CharacterAdded:Wait():WaitForChild("HumanoidRootPart")
 
--- [[ Require for RemoteFunction + RemoteEvent Shortcut ]]
 local mods = {
-	Net = svc.RS.Packages._Index["sleitnick_net@0.2.0"].net,
-	Replion = require(svc.RS.Packages.Replion),
+    Net = svc.RS.Packages._Index["sleitnick_net@0.2.0"].net,
 }
 
--- [[ API Caller from shorcut ]]
 local api = {
-	-- [[ Remote Event ]]
-	Events = {
-		REFishDone = mods.Net["RE/FishingCompleted"],
-	},
-	-- [[ Remote Function ]]
-	Functions = {
-		ChargeRod = mods.Net["RF/ChargeFishingRod"],
-		StartMini = mods.Net["RF/RequestFishingMinigameStarted"],
-		Cancel = mods.Net["RF/CancelFishingInputs"],
-		Done = mods.Net["RF/RequestFishingMinigameStarted"],
-		AutoEnabled = mods.Net["RF/UpdateAutoFishingState"],
-	},
+    Events = {
+        EquipTool = mods.Net["RE/EquipTool"],
+    },
+    Functions = {
+        ChargeRod = mods.Net["RF/ChargeFishingRod"],
+        StartMini = mods.Net["RF/RequestFishingMinigameStarted"],
+        CatchFish = mods.Net["RF/CatchFishCompleted"],
+        CancelFish = mods.Net["RF/CancelFishingInputs"],
+    },
 }
 
-
--- */  Window  /* --
 local Window = WindUI:CreateWindow({
     Title = "LS Hub - Fish It",
     Author = "developed by Louissxe",
@@ -54,13 +44,13 @@ local Window = WindUI:CreateWindow({
     Transparent = true,
     IconSize = 12*2,
     NewElements = true,
-    Size = UDim2.fromOffset(580, 380),
+    Size = UDim2.fromOffset(500, 400),
     ToggleKey = Enum.KeyCode.G,
     User = {
         Enabled = true,
         Anonymous = true,
     },
-    HideSearchBar = false,
+    HideSearchBar = true,
     OpenButton = {
         Title = "Open LS Hub",
         CornerRadius = UDim.new(0.3,0),
@@ -80,128 +70,188 @@ local Window = WindUI:CreateWindow({
 })
 
 local Fish10 = Window:Tab({
-    Title = "Fishing",
+    Title = "Fishing Cycle",
     Icon = "bird",
     Locked = false,
 })
 
--- [[ PROTECTED BLATANT ]]
-local ThreadGuard = { _sessions = {} }
+local Protected = false
+local FishingSession = 0
 
-function ThreadGuard:Next(key)
-	self._sessions[key] = (self._sessions[key] or 0) + 1
-	return self._sessions[key]
+_G.DelayComplete = 0.001
+_G.DelayCycle = 0.05
+_G.AutoEquip = true
+_G.ParallelMode = false
+_G.RapidCalls = 200
+_G.SlowCalls = 20
+
+local function IsSessionAlive(session)
+    return FishingSession == session
 end
 
-function ThreadGuard:IsAlive(key, session)
-	return self._sessions[key] == session
+local function SpamPattern(session)
+    if _G.AutoEquip then
+        pcall(api.Events.EquipTool.FireServer, api.Events.EquipTool, 1)
+        task.wait(0.3)
+    end
+    
+    while Protected and IsSessionAlive(session) do
+        for i = 1, _G.RapidCalls do
+            if not IsSessionAlive(session) then return end
+            
+            local now = workspace:GetServerTimeNow()
+            
+            task.spawn(function()
+                pcall(api.Functions.ChargeRod.InvokeServer, api.Functions.ChargeRod, now + (i * 0.0000001))
+            end)
+            
+            task.spawn(function()
+                pcall(api.Functions.StartMini.InvokeServer, api.Functions.StartMini, -1, 1, now + (i * 0.0000001))
+            end)
+        end
+        
+        task.wait(_G.DelayComplete * _G.RapidCalls)
+        
+        for i = 1, _G.SlowCalls do
+            if not IsSessionAlive(session) then return end
+            
+            task.spawn(function()
+                pcall(api.Functions.CatchFish.InvokeServer, api.Functions.CatchFish)
+            end)
+            
+            task.spawn(function()
+                pcall(api.Functions.CancelFish.InvokeServer, api.Functions.CancelFish)
+            end)
+        end
+        
+        task.wait(_G.DelayCycle)
+    end
 end
 
-local TG = ThreadGuard
-
-
--- [[ Function Blatant ]]
-function Fastest2(session)
-	while Protected and TG:IsAlive("BlatantBeta", session) do
-		task.spawn(function()
-			if not TG:IsAlive("BlatantBeta", session) then
-				return
-			end
-			local now = workspace:GetServerTimeNow()
-			api.Functions.ChargeRod:InvokeServer(now) -- Charge Started 
-		end)
-		task.spawn(function()
-			if not TG:IsAlive("BlatantBeta", session) then
-				return
-			end
-			local started = workspace:GetServerTimeNow()
-			api.Functions.StartMini:InvokeServer(-1, 1, started) -- Start minigame 
-		end)
-		task.wait(_G.FishingDelay2)
-		if not TG:IsAlive("BlatantBeta", session) then
-			break
-		end
-		task.spawn(function()
-			if not TG:IsAlive("BlatantBeta", session) then
-				return
-			end
-			api.Events.REFishDone:FireServer() -- Complete Fishing (Delay Bait)
-		end)
-		task.wait(_G.Reel2)
-		if not TG:IsAlive("BlatantBeta", session) then
-			break
-		end
-		task.spawn(function()
-			if not TG:IsAlive("BlatantBeta", session) then
-				return
-			end
-			api.Functions.Cancel:InvokeServer() -- Cancel Fishing (Delay Cast)
-		end)
-	end
+local function ParallelSpamPattern(session)
+    if _G.AutoEquip then
+        pcall(api.Events.EquipTool.FireServer, api.Events.EquipTool, 1)
+        task.wait(0.3)
+    end
+    
+    while Protected and IsSessionAlive(session) do
+        task.spawn(function()
+            for i = 1, _G.RapidCalls do
+                if not IsSessionAlive(session) then return end
+                
+                local now = workspace:GetServerTimeNow()
+                
+                task.spawn(function()
+                    pcall(api.Functions.ChargeRod.InvokeServer, api.Functions.ChargeRod, now)
+                end)
+                
+                task.spawn(function()
+                    pcall(api.Functions.StartMini.InvokeServer, api.Functions.StartMini, -1, 1, now)
+                end)
+            end
+        end)
+        
+        task.spawn(function()
+            for i = 1, _G.SlowCalls do
+                if not IsSessionAlive(session) then return end
+                
+                task.spawn(function()
+                    if i % 2 == 0 then
+                        pcall(api.Functions.CatchFish.InvokeServer, api.Functions.CatchFish)
+                    else
+                        pcall(api.Functions.CancelFish.InvokeServer, api.Functions.CancelFish)
+                    end
+                end)
+            end
+        end)
+        
+        task.wait(_G.DelayCycle)
+    end
 end
 
 Fish10:Input({
-	Title = "Delay Bait",
-	Value = tostring(_G.Reel2),
-	Callback = function(v)
-		local n = tonumber(v)
-		if n and n > 0 then
-			_G.Reel2 = n
-		end
-	end,
+    Title = "Delay Complete",
+    Description = "Delay untuk rapid calls (default: 0.001)",
+    Value = tostring(_G.DelayComplete),
+    Callback = function(v)
+        local n = tonumber(v)
+        if n and n >= 0.0001 then
+            _G.DelayComplete = n
+        end
+    end,
 })
 
 Fish10:Input({
-	Title = "Delay Cast",
-	Value = tostring(_G.FishingDelay2),
-	Callback = function(v)
-		local n = tonumber(v)
-		if n and n > 0 then
-			_G.FishingDelay2 = n
-		end
-	end,
+    Title = "Delay Cycle", 
+    Description = "Delay antar cycle (default: 0.05)",
+    Value = tostring(_G.DelayCycle),
+    Callback = function(v)
+        local n = tonumber(v)
+        if n and n >= 0 then
+            _G.DelayCycle = n
+        end
+    end,
+})
+
+Fish10:Input({
+    Title = "Rapid Calls",
+    Description = "Jumlah rapid calls per cycle (default: 200)",
+    Value = tostring(_G.RapidCalls),
+    Callback = function(v)
+        local n = tonumber(v)
+        if n and n >= 1 and n <= 500 then
+            _G.RapidCalls = n
+        end
+    end,
+})
+
+Fish10:Input({
+    Title = "Slow Calls",
+    Description = "Jumlah slow calls per cycle (default: 20)",
+    Value = tostring(_G.SlowCalls),
+    Callback = function(v)
+        local n = tonumber(v)
+        if n and n >= 1 and n <= 100 then
+            _G.SlowCalls = n
+        end
+    end,
 })
 
 Fish10:Toggle({
-	Title = "Stable Result v2",
-	Default = _G.FStable2,
-	Callback = function(s)
-		_G.FStable2 = s
-	end,
+    Title = "Auto Equip Rod",
+    Default = _G.AutoEquip,
+    Callback = function(s)
+        _G.AutoEquip = s
+    end,
 })
 
 Fish10:Toggle({
-	Title = "Blatant Fishing v2",
-	Default = _G.FBlatant2,
-	Callback = function(s)
-		if _G.FBlatant2 == s then
-			return
-		end
-		_G.FBlatant2 = s
-
-		api.Functions.AutoEnabled:InvokeServer(s and _G.FStable2) -- for byoassed auto from games
-
-		local session = TG:Next("BlatantBeta")
-
-		if s then
-			Protected = true
-			player:SetAttribute("Loading", nil) -- bypassed character not casting
-			task.spawn(function()
-				Fastest2(session)
-			end)
-		else
-			Protected = false
-			player:SetAttribute("Loading", false) -- back normal
-			TG:Next("BlatantBeta")
-		end
-	end,
+    Title = "Parallel Mode",
+    Default = _G.ParallelMode,
+    Callback = function(s)
+        _G.ParallelMode = s
+    end,
 })
 
-Fish10:Button({
-	Title = "Recovery Fishing",
-	Callback = function()
-		task.spawn(function()
-			api.Functions.Cancel:InvokeServer()
-		end)
-	end,
+Fish10:Toggle({
+    Title = "Start Spam Pattern",
+    Default = false,
+    Callback = function(s)
+        if s then
+            Protected = true
+            FishingSession = FishingSession + 1
+            local currentSession = FishingSession
+            
+            task.spawn(function()
+                if _G.ParallelMode then
+                    ParallelSpamPattern(currentSession)
+                else
+                    SpamPattern(currentSession)
+                end
+            end)
+        else
+            Protected = false
+            FishingSession = FishingSession + 1
+        end
+    end,
 })
