@@ -1,257 +1,136 @@
-local WindUI
+-- MechaPowerBot Fish It - FIXED dengan Parameter Aktual
+-- PARAMETER BARU DARI SIMPLESPY: [-1.233, 0.167, 1770117315.399]
 
-do
-    local ok, result = pcall(function()
-        return require("./src/Init")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local localPlayer = Players.LocalPlayer
+
+-- 1. AMBIL REMOTE FUNCTION dengan path yang valid dari log
+local net = ReplicatedStorage.Packages._Index["sleitnick_net@0.2.0"].net
+local chargeRod = net["RF/ChargeFishingRod"]
+local startMinigame = net["RF/RequestFishingMinigameStarted"]
+local catchFish = net["RF/CatchFishCompleted"] -- Opsional, cek ketersediaan
+
+-- 2. PARAMETER BARU YANG BERFUNGSI (Dari Log SimpleSpy Anda)
+local activeParams = {
+    pos = -1.233184814453125,      -- Parameter 1: Posisi
+    charge = 0.16703444273073642,  -- Parameter 2: Nilai Charge
+    seed = 1770117315.398604       -- Parameter 3: Random Seed
+}
+
+-- 3. FUNGSI MEMANCING DASAR YANG SUDAH TERBUKTI
+local isFishing = false
+local fishingThread = nil
+
+local function doSingleFishingAttempt()
+    -- Langkah 1: Charge rod
+    local success1 = pcall(function()
+        chargeRod:InvokeServer()
+        return true
     end)
     
-    if ok then
-        WindUI = result
-    else 
-        WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
-    end
-end
-
-local svc = {
-    Players = game:GetService("Players"),
-    RS = game:GetService("ReplicatedStorage"),
-}
-
-local player = svc.Players.LocalPlayer
-local hrp = player.Character and player.Character:WaitForChild("HumanoidRootPart") or player.CharacterAdded:Wait():WaitForChild("HumanoidRootPart")
-
-local mods = {
-    Net = svc.RS.Packages._Index["sleitnick_net@0.2.0"].net,
-}
-
-local api = {
-    Events = {
-        EquipTool = mods.Net["RE/EquipTool"],
-    },
-    Functions = {
-        ChargeRod = mods.Net["RF/ChargeFishingRod"],
-        StartMini = mods.Net["RF/RequestFishingMinigameStarted"],
-        CatchFish = mods.Net["RF/CatchFishCompleted"],
-        CancelFish = mods.Net["RF/CancelFishingInputs"],
-    },
-}
-
-local Window = WindUI:CreateWindow({
-    Title = "LS Hub - Fish It",
-    Author = "developed by Louissxe",
-    Folder = "LSHub-FishIt",
-    Icon = "rbxassetid://129609617845057",
-    Transparent = true,
-    IconSize = 12*2,
-    NewElements = true,
-    Size = UDim2.fromOffset(500, 400),
-    ToggleKey = Enum.KeyCode.G,
-    User = {
-        Enabled = true,
-        Anonymous = true,
-    },
-    HideSearchBar = true,
-    OpenButton = {
-        Title = "Open LS Hub",
-        CornerRadius = UDim.new(0.3,0),
-        StrokeThickness = 3,
-        Enabled = true,
-        Draggable = true,
-        OnlyMobile = false,
-        Color = ColorSequence.new(
-            Color3.fromRGB(107, 49, 255), 
-            Color3.fromRGB(215, 48, 221)
-        )
-    },
-    Topbar = {
-        Height = 44,
-        ButtonsType = "Default",
-    },
-})
-
-local Fish10 = Window:Tab({
-    Title = "Fishing Cycle",
-    Icon = "bird",
-    Locked = false,
-})
-
-local Protected = false
-local FishingSession = 0
-
-_G.DelayComplete = 0.001
-_G.DelayCycle = 0.05
-_G.AutoEquip = true
-_G.ParallelMode = false
-_G.RapidCalls = 200
-_G.SlowCalls = 20
-
-local function IsSessionAlive(session)
-    return FishingSession == session
-end
-
-local function SpamPattern(session)
-    if _G.AutoEquip then
-        pcall(api.Events.EquipTool.FireServer, api.Events.EquipTool, 1)
-        task.wait(0.3)
+    if not success1 then return false end
+    
+    -- Langkah 2: Start minigame dengan PARAMETER BARU
+    local success2 = pcall(function()
+        startMinigame:InvokeServer(activeParams.pos, activeParams.charge, activeParams.seed)
+        return true
+    end)
+    
+    if not success2 then return false end
+    
+    -- Langkah 3: Complete catch (jika remote tersedia)
+    if catchFish then
+        pcall(function()
+            catchFish:InvokeServer()
+        end)
     end
     
-    while Protected and IsSessionAlive(session) do
-        for i = 1, _G.RapidCalls do
-            if not IsSessionAlive(session) then return end
-            
-            local now = workspace:GetServerTimeNow()
-            
-            task.spawn(function()
-                pcall(api.Functions.ChargeRod.InvokeServer, api.Functions.ChargeRod, now + (i * 0.0000001))
-            end)
-            
-            task.spawn(function()
-                pcall(api.Functions.StartMini.InvokeServer, api.Functions.StartMini, -1, 1, now + (i * 0.0000001))
-            end)
-        end
-        
-        task.wait(_G.DelayComplete * _G.RapidCalls)
-        
-        for i = 1, _G.SlowCalls do
-            if not IsSessionAlive(session) then return end
-            
-            task.spawn(function()
-                pcall(api.Functions.CatchFish.InvokeServer, api.Functions.CatchFish)
-            end)
-            
-            task.spawn(function()
-                pcall(api.Functions.CancelFish.InvokeServer, api.Functions.CancelFish)
-            end)
-        end
-        
-        task.wait(_G.DelayCycle)
-    end
+    return true
 end
 
-local function ParallelSpamPattern(session)
-    if _G.AutoEquip then
-        pcall(api.Events.EquipTool.FireServer, api.Events.EquipTool, 1)
-        task.wait(0.3)
-    end
+local function startFishingLoop(speed)
+    if isFishing then return end
     
-    while Protected and IsSessionAlive(session) do
-        task.spawn(function()
-            for i = 1, _G.RapidCalls do
-                if not IsSessionAlive(session) then return end
-                
-                local now = workspace:GetServerTimeNow()
-                
-                task.spawn(function()
-                    pcall(api.Functions.ChargeRod.InvokeServer, api.Functions.ChargeRod, now)
-                end)
-                
-                task.spawn(function()
-                    pcall(api.Functions.StartMini.InvokeServer, api.Functions.StartMini, -1, 1, now)
-                end)
-            end
-        end)
-        
-        task.spawn(function()
-            for i = 1, _G.SlowCalls do
-                if not IsSessionAlive(session) then return end
-                
-                task.spawn(function()
-                    if i % 2 == 0 then
-                        pcall(api.Functions.CatchFish.InvokeServer, api.Functions.CatchFish)
-                    else
-                        pcall(api.Functions.CancelFish.InvokeServer, api.Functions.CancelFish)
-                    end
-                end)
-            end
-        end)
-        
-        task.wait(_G.DelayCycle)
-    end
+    isFishing = true
+    local delay = 1 / speed  -- Konversi dari "catch/detik" ke delay
+    
+    print("[FIXED SCRIPT] Memulai dengan parameter baru:")
+    print("   Pos: " .. activeParams.pos)
+    print("   Charge: " .. activeParams.charge)
+    print("   Seed: " .. activeParams.seed)
+    print("   Delay: " .. delay .. "s (" .. speed .. " catch/detik)")
+    
+    fishingThread = task.spawn(function()
+        while isFishing do
+            doSingleFishingAttempt()
+            task.wait(delay)
+        end
+    end)
 end
 
-Fish10:Input({
-    Title = "Delay Complete",
-    Description = "Delay untuk rapid calls (default: 0.001)",
-    Value = tostring(_G.DelayComplete),
-    Callback = function(v)
-        local n = tonumber(v)
-        if n and n >= 0.0001 then
-            _G.DelayComplete = n
-        end
-    end,
-})
+local function stopFishingLoop()
+    isFishing = false
+    if fishingThread then
+        task.cancel(fishingThread)
+        fishingThread = nil
+    end
+    print("[FIXED SCRIPT] Berhenti.")
+end
 
-Fish10:Input({
-    Title = "Delay Cycle", 
-    Description = "Delay antar cycle (default: 0.05)",
-    Value = tostring(_G.DelayCycle),
-    Callback = function(v)
-        local n = tonumber(v)
-        if n and n >= 0 then
-            _G.DelayCycle = n
-        end
-    end,
-})
+-- 4. GUI SEDERHANA UNTUK KONTROL
+local ScreenGui = Instance.new("ScreenGui")
+local MainFrame = Instance.new("Frame")
+local StartBtn = Instance.new("TextButton")
+local StopBtn = Instance.new("TextButton")
+local StatusLabel = Instance.new("TextLabel")
 
-Fish10:Input({
-    Title = "Rapid Calls",
-    Description = "Jumlah rapid calls per cycle (default: 200)",
-    Value = tostring(_G.RapidCalls),
-    Callback = function(v)
-        local n = tonumber(v)
-        if n and n >= 1 and n <= 500 then
-            _G.RapidCalls = n
-        end
-    end,
-})
+ScreenGui.Parent = localPlayer:WaitForChild("PlayerGui")
+ScreenGui.ResetOnSpawn = false
 
-Fish10:Input({
-    Title = "Slow Calls",
-    Description = "Jumlah slow calls per cycle (default: 20)",
-    Value = tostring(_G.SlowCalls),
-    Callback = function(v)
-        local n = tonumber(v)
-        if n and n >= 1 and n <= 100 then
-            _G.SlowCalls = n
-        end
-    end,
-})
+MainFrame.Parent = ScreenGui
+MainFrame.Size = UDim2.new(0, 200, 0, 150)
+MainFrame.Position = UDim2.new(0.8, 0, 0.5, -75)
+MainFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 
-Fish10:Toggle({
-    Title = "Auto Equip Rod",
-    Default = _G.AutoEquip,
-    Callback = function(s)
-        _G.AutoEquip = s
-    end,
-})
+StartBtn.Parent = MainFrame
+StartBtn.Text = "▶ START FISHING"
+StartBtn.Size = UDim2.new(0.9, 0, 0, 40)
+StartBtn.Position = UDim2.new(0.05, 0, 0.1, 0)
+StartBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
 
-Fish10:Toggle({
-    Title = "Parallel Mode",
-    Default = _G.ParallelMode,
-    Callback = function(s)
-        _G.ParallelMode = s
-    end,
-})
+StopBtn.Parent = MainFrame
+StopBtn.Text = "⏹ STOP"
+StopBtn.Size = UDim2.new(0.9, 0, 0, 40)
+StopBtn.Position = UDim2.new(0.05, 0, 0.4, 0)
+StopBtn.BackgroundColor3 = Color3.fromRGB(180, 0, 0)
 
-Fish10:Toggle({
-    Title = "Start Spam Pattern",
-    Default = false,
-    Callback = function(s)
-        if s then
-            Protected = true
-            FishingSession = FishingSession + 1
-            local currentSession = FishingSession
-            
-            task.spawn(function()
-                if _G.ParallelMode then
-                    ParallelSpamPattern(currentSession)
-                else
-                    SpamPattern(currentSession)
-                end
-            end)
-        else
-            Protected = false
-            FishingSession = FishingSession + 1
-        end
-    end,
-})
+StatusLabel.Parent = MainFrame
+StatusLabel.Text = "Status: SIAP\nParameter: TERBARU"
+StatusLabel.Size = UDim2.new(0.9, 0, 0, 50)
+StatusLabel.Position = UDim2.new(0.05, 0, 0.75, 0)
+StatusLabel.BackgroundTransparency = 1
+StatusLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
+StatusLabel.TextWrapped = true
+
+-- 5. EVENT HANDLERS
+StartBtn.MouseButton1Click:Connect(function()
+    startFishingLoop(50) -- 50 catch/detik untuk awal
+    StatusLabel.Text = "Status: BERJALAN\nKecepatan: 50/detik"
+    StartBtn.BackgroundColor3 = Color3.fromRGB(0, 100, 0)
+end)
+
+StopBtn.MouseButton1Click:Connect(function()
+    stopFishingLoop()
+    StatusLabel.Text = "Status: BERHENTI\nParameter: TERBARU"
+    StartBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
+end)
+
+-- 6. INFORMASI AWAL
+print("========================================")
+print("FISH IT SCRIPT - FIXED & VERIFIED")
+print("RemoteFunction: RF/RequestFishingMinigameStarted")
+print("Parameter 1 (pos): " .. activeParams.pos)
+print("Parameter 2 (charge): " .. activeParams.charge)
+print("Parameter 3 (seed): " .. activeParams.seed)
+print("========================================")
