@@ -1,463 +1,91 @@
-local WindUI
-
-do
-    local ok, result = pcall(function()
-        return require("./src/Init")
-    end)
-    
-    if ok then
-        WindUI = result
-    else 
-        WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
-    end
-end
+local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
 
 local svc = {
-    Players = game:GetService("Players"),
     RS = game:GetService("ReplicatedStorage"),
 }
-
-local player = svc.Players.LocalPlayer
-local hrp = player.Character and player.Character:WaitForChild("HumanoidRootPart") or player.CharacterAdded:Wait():WaitForChild("HumanoidRootPart")
 
 local mods = {
     Net = svc.RS.Packages._Index["sleitnick_net@0.2.0"].net,
 }
 
 local api = {
-    Events = {
-        EquipTool = mods.Net["RE/EquipToolFromHotbar"],
-    },
     Functions = {
         ChargeRod = mods.Net["RF/ChargeFishingRod"],
         StartMini = mods.Net["RF/RequestFishingMinigameStarted"],
         CatchFish = mods.Net["RF/CatchFishCompleted"],
-        CancelFish = mods.Net["RF/CancelFishingInputs"],
     },
 }
 
 local Window = WindUI:CreateWindow({
-    Title = "Patungin Hub - Fish It",
-    Author = "developed by Patungin",
-    Folder = "PatunginHub-FishIt",
-    Icon = "rbxassetid://129609617845057",
-    Transparent = true,
-    IconSize = 12*2,
-    NewElements = true,
-    Size = UDim2.fromOffset(520, 450),
+    Title = "Auto Fish",
+    Author = "Patungin",
+    Folder = "AutoFish",
+    Size = UDim2.fromOffset(400, 300),
     ToggleKey = Enum.KeyCode.G,
-    User = {
-        Enabled = true,
-        Anonymous = false,
-    },
-    HideSearchBar = true,
-    OpenButton = {
-        Title = "Open Patungin Hub",
-        CornerRadius = UDim.new(0.3,0),
-        StrokeThickness = 3,
-        Enabled = true,
-        Draggable = true,
-        OnlyMobile = false,
-        Color = ColorSequence.new(
-            Color3.fromRGB(107, 49, 255), 
-            Color3.fromRGB(215, 48, 221)
-        )
-    },
-    Topbar = {
-        Height = 44,
-        ButtonsType = "Default",
-    },
 })
 
-local MainTab = Window:Tab({
-    Title = "Fishing",
+local Main = Window:Tab({
+    Title = "Main",
     Icon = "fish",
-    Locked = false,
 })
 
-local StatsTab = Window:Tab({
-    Title = "Statistics",
-    Icon = "bar-chart-2",
-    Locked = false,
-})
+local Running = false
+_G.DelayComplete = 0.01
+_G.DelayCycle = 0.1
 
--- Global Settings
-local Protected = false
-local FishingSession = 0
-
-_G.DelayComplete = 0.01 
-_G.DelayCycle = 0.1 
-_G.AutoEquip = true 
-_G.BlatantMode = false 
-_G.ParallelMode = false
-
-_G.RapidCalls = 115
-_G.SlowCalls = 15
-
--- Stats
-local Stats = {
-    FishCaught = 0,
-    TotalCycles = 0,
-    TotalRapidCalls = 0,
-    TotalSlowCalls = 0,
-    StartTime = 0,
-    Errors = 0,
-}
-
-local function IsSessionAlive(session)
-    return FishingSession == session
-end
-
-local function formatTime(seconds)
-    local hours = math.floor(seconds / 3600)
-    local mins = math.floor((seconds % 3600) / 60)
-    local secs = math.floor(seconds % 60)
-    return string.format("%02d:%02d:%02d", hours, mins, secs)
-end
-
-local function SpamPattern(session)
-    if _G.AutoEquip then
-        pcall(api.Events.EquipTool.FireServer, api.Events.EquipTool, 1)
-        task.wait(0.5)
-    end
-    
-    while Protected and IsSessionAlive(session) do
-        local success, err = pcall(function()
-            Stats.TotalCycles = Stats.TotalCycles + 1
+local function AutoFish()
+    while Running do
+        pcall(function()
+            local now = workspace:GetServerTimeNow()
             
-            -- Phase 1: Rapid Spam
-            for i = 1, _G.RapidCalls do
-                if not IsSessionAlive(session) then return end
-                
-                local now = workspace:GetServerTimeNow()
-                
-                pcall(function()
-                    api.Functions.ChargeRod:InvokeServer(now + (i * 0.000001))
-                end)
-                
-                pcall(function()
-                    api.Functions.StartMini:InvokeServer(-1, 1, now + (i * 0.000001) + 0.0001)
-                end)
-                
-                Stats.TotalRapidCalls = Stats.TotalRapidCalls + 2
-                task.wait(_G.DelayComplete)
-            end
+            -- Spam ChargeRod + StartMini
+            api.Functions.ChargeRod:InvokeServer(now)
+            task.wait(_G.DelayComplete)
             
-            -- Phase 2: Slow Spam
-            local slowDelay = (_G.RapidCalls * _G.DelayComplete) / _G.SlowCalls
+            api.Functions.StartMini:InvokeServer(-1, 1, now)
+            task.wait(_G.DelayComplete)
             
-            for i = 1, _G.SlowCalls do
-                if not IsSessionAlive(session) then return end
-                
-                pcall(function()
-                    api.Functions.CatchFish:InvokeServer()
-                end)
-                
-                pcall(function()
-                    api.Functions.CancelFish:InvokeServer()
-                end)
-                
-                Stats.TotalSlowCalls = Stats.TotalSlowCalls + 2
-                task.wait(slowDelay)
-            end
+            -- Complete
+            api.Functions.CatchFish:InvokeServer()
             
-            Stats.FishCaught = Stats.FishCaught + 1
             task.wait(_G.DelayCycle)
         end)
-        
-        if not success then
-            Stats.Errors = Stats.Errors + 1
-            warn("Fishing Error:", err)
-            task.wait(1)
-        end
     end
 end
 
-local function ParallelSpamPattern(session)
-    if _G.AutoEquip then
-        pcall(api.Events.EquipTool.FireServer, api.Events.EquipTool, 1)
-        task.wait(0.5)
-    end
-    
-    while Protected and IsSessionAlive(session) do
-        local success, err = pcall(function()
-            Stats.TotalCycles = Stats.TotalCycles + 1
-            
-            -- Rapid Phase (Parallel)
-            task.spawn(function()
-                for i = 1, _G.RapidCalls do
-                    if not IsSessionAlive(session) then return end
-                    
-                    local now = workspace:GetServerTimeNow()
-                    pcall(api.Functions.ChargeRod.InvokeServer, api.Functions.ChargeRod, now)
-                    task.wait(_G.DelayComplete)
-                    
-                    pcall(api.Functions.StartMini.InvokeServer, api.Functions.StartMini, -1, 1, now)
-                    task.wait(_G.DelayComplete)
-                    
-                    Stats.TotalRapidCalls = Stats.TotalRapidCalls + 2
-                end
-            end)
-            
-            -- Slow Phase (Parallel)
-            task.spawn(function()
-                task.wait(_G.DelayComplete * 2)
-                
-                local slowDelay = (_G.RapidCalls * _G.DelayComplete * 2) / _G.SlowCalls
-                
-                for i = 1, _G.SlowCalls do
-                    if not IsSessionAlive(session) then return end
-                    
-                    if i % 2 == 1 then
-                        pcall(api.Functions.CancelFish.InvokeServer, api.Functions.CancelFish)
-                    else
-                        pcall(api.Functions.CatchFish.InvokeServer, api.Functions.CatchFish)
-                    end
-                    
-                    Stats.TotalSlowCalls = Stats.TotalSlowCalls + 1
-                    task.wait(slowDelay)
-                end
-            end)
-            
-            task.wait((_G.RapidCalls * _G.DelayComplete * 2) + _G.DelayCycle)
-            Stats.FishCaught = Stats.FishCaught + 1
-        end)
-        
-        if not success then
-            Stats.Errors = Stats.Errors + 1
-            warn("Fishing Error:", err)
-            task.wait(1)
-        end
-    end
-end
-
--- Main Tab UI
-local ControlSection = MainTab:Section({
-    Title = "Fishing Controls"
-})
-
-ControlSection:Toggle({
+Main:Toggle({
     Title = "Start Auto Fish",
-    Default = _G.BlatantMode,
-    Callback = function(state)
-        if _G.BlatantMode == state then return end
-        _G.BlatantMode = state
-        
-        if state then
-            Protected = true
-            FishingSession = FishingSession + 1
-            Stats.StartTime = tick()
-            Stats.FishCaught = 0
-            Stats.TotalCycles = 0
-            Stats.TotalRapidCalls = 0
-            Stats.TotalSlowCalls = 0
-            Stats.Errors = 0
-            
-            local currentSession = FishingSession
-            
-            task.spawn(function()
-                if _G.ParallelMode then
-                    ParallelSpamPattern(currentSession)
-                else
-                    SpamPattern(currentSession)
-                end
-            end)
-            
-            Window:Notify({
-                Title = "Auto Fish Started",
-                Content = "Mode: " .. (_G.ParallelMode and "Parallel" or "Sequential"),
-                Duration = 3
-            })
-        else
-            Protected = false
-            FishingSession = FishingSession + 1
-            
-            Window:Notify({
-                Title = "Auto Fish Stopped",
-                Content = "Total Fish: " .. Stats.FishCaught,
-                Duration = 3
-            })
-        end
-    end,
-})
-
-ControlSection:Toggle({
-    Title = "Auto Equip Rod",
-    Description = "Auto equip fishing rod on slot 1",
-    Default = true,
-    Callback = function(state)
-        _G.AutoEquip = state
-    end,
-})
-
-local TimingSection = MainTab:Section({
-    Title = "Timing Configuration"
-})
-
-TimingSection:Input({
-    Title = "Delay Complete",
-    Description = "Delay untuk rapid calls (detik)",
-    Value = tostring(_G.DelayComplete),
-    Callback = function(value)
-        local num = tonumber(value)
-        if num and num >= 0.001 then
-            _G.DelayComplete = num
-        end
-    end,
-})
-
-TimingSection:Input({
-    Title = "Delay Cycle", 
-    Description = "Delay antar fishing cycle (detik)",
-    Value = tostring(_G.DelayCycle),
-    Callback = function(value)
-        local num = tonumber(value)
-        if num and num >= 0 then
-            _G.DelayCycle = num
-        end
-    end,
-})
-
-local AdvancedSection = MainTab:Section({
-    Title = "Advanced Settings"
-})
-
-AdvancedSection:Toggle({
-    Title = "Use Parallel Mode",
-    Description = "Multi-threaded spam (faster but riskier)",
     Default = false,
     Callback = function(state)
-        _G.ParallelMode = state
-    end,
-})
-
-AdvancedSection:Input({
-    Title = "Rapid Calls",
-    Description = "Jumlah spam ChargeRod + StartMini",
-    Value = tostring(_G.RapidCalls),
-    Callback = function(value)
-        local num = tonumber(value)
-        if num and num > 0 and num <= 500 then
-            _G.RapidCalls = num
+        Running = state
+        if state then
+            task.spawn(AutoFish)
         end
     end,
 })
 
-AdvancedSection:Input({
-    Title = "Slow Calls",
-    Description = "Jumlah spam CatchFish + CancelFish",
-    Value = tostring(_G.SlowCalls),
-    Callback = function(value)
-        local num = tonumber(value)
-        if num and num > 0 and num <= 100 then
-            _G.SlowCalls = num
+Main:Input({
+    Title = "Delay Complete",
+    Description = "Delay antara spam (detik)",
+    Value = "0.01",
+    Callback = function(v)
+        local n = tonumber(v)
+        if n and n >= 0.001 then
+            _G.DelayComplete = n
         end
     end,
 })
 
--- Stats Tab UI
-local LiveStatsSection = StatsTab:Section({
-    Title = "Live Statistics"
-})
-
-local FishCaughtLabel = LiveStatsSection:Label({
-    Title = "Fish Caught: 0"
-})
-
-local CyclesLabel = LiveStatsSection:Label({
-    Title = "Total Cycles: 0"
-})
-
-local RuntimeLabel = LiveStatsSection:Label({
-    Title = "Runtime: 00:00:00"
-})
-
-local RapidCallsLabel = LiveStatsSection:Label({
-    Title = "Rapid Calls: 0"
-})
-
-local SlowCallsLabel = LiveStatsSection:Label({
-    Title = "Slow Calls: 0"
-})
-
-local ErrorsLabel = LiveStatsSection:Label({
-    Title = "Errors: 0"
-})
-
-local PerformanceSection = StatsTab:Section({
-    Title = "Performance Metrics"
-})
-
-local FishPerMinLabel = PerformanceSection:Label({
-    Title = "Fish/Min: 0.00"
-})
-
-local CyclesPerMinLabel = PerformanceSection:Label({
-    Title = "Cycles/Min: 0.00"
-})
-
-local AvgCycleTimeLabel = PerformanceSection:Label({
-    Title = "Avg Cycle Time: 0.00s"
-})
-
-local ControlsSection = StatsTab:Section({
-    Title = "Stats Controls"
-})
-
-ControlsSection:Button({
-    Title = "Reset Statistics",
-    Callback = function()
-        Stats.FishCaught = 0
-        Stats.TotalCycles = 0
-        Stats.TotalRapidCalls = 0
-        Stats.TotalSlowCalls = 0
-        Stats.Errors = 0
-        Stats.StartTime = tick()
-        
-        Window:Notify({
-            Title = "Stats Reset",
-            Content = "All statistics have been reset",
-            Duration = 2
-        })
+Main:Input({
+    Title = "Delay Cycle",
+    Description = "Delay per cycle (detik)",
+    Value = "0.1",
+    Callback = function(v)
+        local n = tonumber(v)
+        if n and n >= 0 then
+            _G.DelayCycle = n
+        end
     end,
 })
 
--- Stats Update Loop
-spawn(function()
-    while true do
-        if Protected then
-            local runtime = tick() - Stats.StartTime
-            
-            -- Update basic stats
-            FishCaughtLabel:Set("Fish Caught: " .. Stats.FishCaught)
-            CyclesLabel:Set("Total Cycles: " .. Stats.TotalCycles)
-            RuntimeLabel:Set("Runtime: " .. formatTime(runtime))
-            RapidCallsLabel:Set("Rapid Calls: " .. Stats.TotalRapidCalls)
-            SlowCallsLabel:Set("Slow Calls: " .. Stats.TotalSlowCalls)
-            ErrorsLabel:Set("Errors: " .. Stats.Errors)
-            
-            -- Calculate performance metrics
-            if runtime > 0 then
-                local fishPerMin = (Stats.FishCaught / runtime) * 60
-                local cyclesPerMin = (Stats.TotalCycles / runtime) * 60
-                local avgCycleTime = Stats.TotalCycles > 0 and (runtime / Stats.TotalCycles) or 0
-                
-                FishPerMinLabel:Set(string.format("Fish/Min: %.2f", fishPerMin))
-                CyclesPerMinLabel:Set(string.format("Cycles/Min: %.2f", cyclesPerMin))
-                AvgCycleTimeLabel:Set(string.format("Avg Cycle Time: %.2fs", avgCycleTime))
-            end
-        end
-        
-        task.wait(0.5)
-    end
-end)
-
--- Load Notification
-Window:Notify({
-    Title = "Patungin Hub Loaded!",
-    Content = "Fish It auto farming ready | Press G to toggle",
-    Duration = 5
-})
-
-print("🎣 Patungin Hub - Fish It Loaded!")
-print("Made by Patungin")
+print("🎣 Auto Fish Loaded!")
