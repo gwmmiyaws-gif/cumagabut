@@ -7,11 +7,11 @@ local svc = {
 
 local player = svc.Players.LocalPlayer
 
-repeat wait() until player.Character
+repeat task.wait() until player.Character
 local character = player.Character
 local hrp = character:WaitForChild("HumanoidRootPart")
 
-wait(1)
+task.wait(1)
 
 local Net = svc.RS:FindFirstChild("Packages")
 if not Net then warn("Packages not found") return end
@@ -45,15 +45,14 @@ local Fish10 = Window:Tab({
 })
 
 local Running = false
-local CatchState = 1
+local CatchIndex = 1
 
 _G.DelayComplete = 0
-_G.DelayCycle = 0.1
-_G.SpamCount = 50
+_G.DelayCycle = 0.5
 
 Fish10:Input({
     Title = "Delay Complete",
-    Description = "Delay per spam call",
+    Description = "Delay spam charge+start",
     Value = "0",
     Callback = function(v)
         _G.DelayComplete = tonumber(v) or 0
@@ -63,18 +62,9 @@ Fish10:Input({
 Fish10:Input({
     Title = "Delay Cycle", 
     Description = "Delay sebelum catch/cancel",
-    Value = "0.1",
+    Value = "0.5",
     Callback = function(v)
-        _G.DelayCycle = tonumber(v) or 0.1
-    end,
-})
-
-Fish10:Input({
-    Title = "Spam Count",
-    Description = "Berapa kali spam charge+start",
-    Value = "50",
-    Callback = function(v)
-        _G.SpamCount = tonumber(v) or 50
+        _G.DelayCycle = tonumber(v) or 0.5
     end,
 })
 
@@ -85,7 +75,7 @@ Fish10:Toggle({
         Running = s
         
         if s then
-            spawn(function()
+            task.spawn(function()
                 local EquipTool = Net:FindFirstChild("RE/EquipToolFromHotbar")
                 local ChargeRod = Net:FindFirstChild("RF/ChargeFishingRod")
                 local StartMini = Net:FindFirstChild("RF/RequestFishingMinigameStarted")
@@ -94,15 +84,15 @@ Fish10:Toggle({
                 
                 if EquipTool then
                     pcall(function() EquipTool:FireServer(1) end)
-                    wait(0.5)
+                    task.wait(0.5)
                 end
                 
                 while Running do
-                    for i = 1, _G.SpamCount do
-                        if not Running then break end
-                        
+                    local startTime = tick()
+                    
+                    while (tick() - startTime) < _G.DelayCycle and Running do
                         if ChargeRod then
-                            spawn(function()
+                            task.spawn(function()
                                 pcall(function()
                                     ChargeRod:InvokeServer(workspace:GetServerTimeNow())
                                 end)
@@ -110,49 +100,37 @@ Fish10:Toggle({
                         end
                         
                         if StartMini then
-                            spawn(function()
+                            task.spawn(function()
                                 pcall(function()
                                     StartMini:InvokeServer(-1, 1, workspace:GetServerTimeNow())
                                 end)
                             end)
                         end
                         
-                        if _G.DelayComplete > 0 then wait(_G.DelayComplete) end
+                        if _G.DelayComplete > 0 then 
+                            task.wait(_G.DelayComplete) 
+                        else
+                            task.wait()
+                        end
                     end
                     
-                    wait(_G.DelayCycle)
-                    
-                    if CatchState == 1 then
+                    if CatchIndex % 2 == 1 then
                         if CatchFish then
                             pcall(function()
                                 CatchFish:InvokeServer()
                             end)
                         end
-                        CatchState = 2
-                    elseif CatchState == 2 then
-                        if CancelFish then
-                            pcall(function()
-                                CancelFish:InvokeServer()
-                            end)
-                        end
-                        CatchState = 3
-                    elseif CatchState == 3 then
-                        if CatchFish then
-                            pcall(function()
-                                CatchFish:InvokeServer()
-                            end)
-                        end
-                        CatchState = 4
                     else
                         if CancelFish then
                             pcall(function()
                                 CancelFish:InvokeServer()
                             end)
                         end
-                        CatchState = 1
                     end
                     
-                    wait(0.05)
+                    CatchIndex = CatchIndex + 1
+                    
+                    task.wait(0.05)
                 end
             end)
         end
