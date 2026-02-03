@@ -19,7 +19,7 @@ local Net = svc.RS.Packages._Index["sleitnick_net@0.2.0"].net
 
 local Window = WindUI:CreateWindow({
     Title = "LS Hub - Fish It",
-    Author = "developed by Louissxe",
+    Author = "developed by Raditya",
     Folder = "LSHub-FishIt",
     Icon = "rbxassetid://129609617845057",
     Transparent = true,
