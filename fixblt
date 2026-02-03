@@ -26,7 +26,7 @@ local mods = {
 
 local api = {
     Events = {
-        EquipTool = mods.Net["RE/EquipToolFromHotbar"],
+        EquipTool = mods.Net["RE/EquipTool"],
     },
     Functions = {
         ChargeRod = mods.Net["RF/ChargeFishingRod"],
@@ -78,169 +78,57 @@ local Fish10 = Window:Tab({
 local Protected = false
 local FishingSession = 0
 
-_G.DelayComplete = 0.01 
-_G.DelayCycle = 0.1 
-_G.AutoEquip = true 
-_G.BlatantMode = false 
-
-_G.RapidCalls = 115
-_G.SlowCalls = 15
+_G.DelayComplete = 0
+_G.DelayCycle = 0.1
 
 local function IsSessionAlive(session)
-    return FishingSession == session
+    return FishingSession == session and Protected
 end
 
-local function SpamPattern(session)
+local function SpamFishing(session)
+    pcall(api.Events.EquipTool.FireServer, api.Events.EquipTool, 1)
+    task.wait(0.3)
     
-    if _G.AutoEquip then
-        pcall(api.Events.EquipTool.FireServer, api.Events.EquipTool, 1)
-        task.wait(0.5)
-    end
-    
-    local cycleCount = 0
-    local totalRapidCalls = 0
-    local totalSlowCalls = 0
-    
-    while Protected and IsSessionAlive(session) do
-        cycleCount = cycleCount + 1
-        
-        local rapidStartTime = tick()
-        local rapidCount = 0
-        
-        for i = 1, _G.RapidCalls do
-            if not IsSessionAlive(session) then return end
-            
-            local now = workspace:GetServerTimeNow()
-            
-            pcall(function()
-                api.Functions.ChargeRod:InvokeServer(now + (i * 0.000001))
-            end)
-            
-            pcall(function()
-                api.Functions.StartMini:InvokeServer(-1, 1, now + (i * 0.000001) + 0.0001)
-            end)
-            
-            rapidCount = rapidCount + 2
-            totalRapidCalls = totalRapidCalls + 2
-            
-            task.wait(_G.DelayComplete)
-        end
-        
-        local rapidTime = tick() - rapidStartTime
-
-        
-        local slowStartTime = tick()
-        local slowCount = 0
-        
-        for i = 1, _G.SlowCalls do
-            if not IsSessionAlive(session) then return end
-            
-            pcall(function()
-                api.Functions.CatchFish:InvokeServer()
-            end)
-            
-            pcall(function()
-                api.Functions.CancelFish:InvokeServer()
-            end)
-            
-            slowCount = slowCount + 2
-            totalSlowCalls = totalSlowCalls + 2
-
-            local slowDelay = (_G.RapidCalls * _G.DelayComplete) / _G.SlowCalls
-            task.wait(slowDelay)
-        end
-        
-        local slowTime = tick() - slowStartTime
-        
-        task.wait(_G.DelayCycle)
-        
-        if cycleCount % 5 == 0 then
-        end
-    end
-end
-
-local function ParallelSpamPattern(session)
-    
-    if _G.AutoEquip then
-        pcall(api.Events.EquipTool.FireServer, api.Events.EquipTool, 1)
-        task.wait(0.5)
-    end
-    
-    local cycleCount = 0
-    
-    while Protected and IsSessionAlive(session) do
-        cycleCount = cycleCount + 1
-        
-        task.spawn(function()
-            for i = 1, _G.RapidCalls do
-                if not IsSessionAlive(session) then return end
-                
-                local now = workspace:GetServerTimeNow()
-                pcall(api.Functions.ChargeRod.InvokeServer, api.Functions.ChargeRod, now)
-                task.wait(_G.DelayComplete)
-                
-                pcall(api.Functions.StartMini.InvokeServer, api.Functions.StartMini, -1, 1, now)
-                task.wait(_G.DelayComplete)
-            end
-        end)
-        
-        task.spawn(function()
-            task.wait(_G.DelayComplete * 2)
-            
-            for i = 1, _G.SlowCalls do
-                if not IsSessionAlive(session) then return end
-                
-                if i % 2 == 1 then
-                    pcall(api.Functions.CancelFish.InvokeServer, api.Functions.CancelFish)
-                else
-                    pcall(api.Functions.CatchFish.InvokeServer, api.Functions.CatchFish)
-                end
-                
-                local slowDelay = (_G.RapidCalls * _G.DelayComplete * 2) / _G.SlowCalls
-                task.wait(slowDelay)
-            end
-        end)
-        
-        task.wait((_G.RapidCalls * _G.DelayComplete * 2) + _G.DelayCycle)
-        
-        if cycleCount % 3 == 0 then
-        end
-    end
-end
-
-local function SimpleSpamTest()
-    
-    if _G.AutoEquip then
-        pcall(api.Events.EquipTool.FireServer, api.Events.EquipTool, 1)
-        task.wait(0.3)
-    end
-    
-    for i = 1, 5 do 
+    while IsSessionAlive(session) do
         local now = workspace:GetServerTimeNow()
         
-        pcall(api.Functions.ChargeRod.InvokeServer, api.Functions.ChargeRod, now)
-        task.wait(_G.DelayComplete)
+        task.spawn(function()
+            pcall(api.Functions.ChargeRod.InvokeServer, api.Functions.ChargeRod, now)
+        end)
         
-        pcall(api.Functions.StartMini.InvokeServer, api.Functions.StartMini, -1, 1, now)
-        task.wait(_G.DelayComplete)
-    end
-    
-    for i = 1, 3 do
-        pcall(api.Functions.CancelFish.InvokeServer, api.Functions.CancelFish)
-        task.wait(_G.DelayComplete * 3)
+        if _G.DelayComplete > 0 then task.wait(_G.DelayComplete) end
         
-        pcall(api.Functions.CatchFish.InvokeServer, api.Functions.CatchFish)
-        task.wait(_G.DelayComplete * 3)
+        task.spawn(function()
+            pcall(api.Functions.StartMini.InvokeServer, api.Functions.StartMini, -1, 1, now)
+        end)
+        
+        if _G.DelayComplete > 0 then task.wait(_G.DelayComplete) end
+        
+        task.spawn(function()
+            pcall(api.Functions.CatchFish.InvokeServer, api.Functions.CatchFish)
+        end)
+        
+        if _G.DelayComplete > 0 then task.wait(_G.DelayComplete) end
+        
+        task.spawn(function()
+            pcall(api.Functions.CancelFish.InvokeServer, api.Functions.CancelFish)
+        end)
+        
+        if _G.DelayCycle > 0 then 
+            task.wait(_G.DelayCycle)
+        else
+            task.wait()
+        end
     end
 end
 
 Fish10:Input({
     Title = "Delay Complete",
-    Description = "Delay untuk rapid 115x calls",
+    Description = "Delay per action (0 = instant)",
     Value = tostring(_G.DelayComplete),
     Callback = function(v)
         local n = tonumber(v)
-        if n and n >= 0.001 then
+        if n and n >= 0 then
             _G.DelayComplete = n
         end
     end,
@@ -248,7 +136,7 @@ Fish10:Input({
 
 Fish10:Input({
     Title = "Delay Cycle", 
-    Description = "Delay antar cycle",
+    Description = "Delay antar cycle fishing",
     Value = tostring(_G.DelayCycle),
     Callback = function(v)
         local n = tonumber(v)
@@ -259,35 +147,19 @@ Fish10:Input({
 })
 
 Fish10:Toggle({
-    Title = "Use Parallel Mode",
+    Title = "Start Auto Fishing",
     Default = false,
     Callback = function(s)
-        _G.ParallelMode = s
-    end,
-})
-
-Fish10:Toggle({
-    Title = "Start Scan Pattern",
-    Default = _G.BlatantMode,
-    Callback = function(s)
-        if _G.BlatantMode == s then return end
-        _G.BlatantMode = s
-        
         if s then
             Protected = true
-            FishingSession = FishingSession
+            FishingSession = FishingSession + 1
             local currentSession = FishingSession
             
             task.spawn(function()
-                if _G.ParallelMode then
-                    ParallelSpamPattern(currentSession)
-                else
-                    SpamPattern(currentSession)
-                end
+                SpamFishing(currentSession)
             end)
         else
             Protected = false
-            FishingSession = FishingSession
         end
     end,
 })
