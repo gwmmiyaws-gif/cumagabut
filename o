@@ -190,41 +190,49 @@ end
 
 local function ExportLog()
     if #LoggedCalls == 0 then
-        print("No logged calls to export!")
-        return
+        return "No logged calls to export!"
     end
     
-    print("\n" .. string.rep("=", 80))
-    print("FISHING CALL LOG - Copy everything below this line")
-    print(string.rep("=", 80))
-    print("Total Calls:", Stats.TotalCalls)
-    print("Duration:", string.format("%.3fs", LoggedCalls[#LoggedCalls] and (tick() - LogStartTime) or 0))
-    print("\nBreakdown:")
-    print("  ChargeRod:", Stats.ChargeRod)
-    print("  StartMini:", Stats.StartMini)
-    print("  CatchFish:", Stats.CatchFish)
-    print("  CancelFish:", Stats.CancelFish)
-    print(string.rep("-", 80))
+    local output = {}
+    
+    table.insert(output, string.rep("=", 80))
+    table.insert(output, "FISHING CALL LOG")
+    table.insert(output, string.rep("=", 80))
+    table.insert(output, "Total Calls: " .. Stats.TotalCalls)
+    table.insert(output, string.format("Duration: %.3fs", tick() - LogStartTime))
+    table.insert(output, "")
+    table.insert(output, "Breakdown:")
+    table.insert(output, "  ChargeRod: " .. Stats.ChargeRod)
+    table.insert(output, "  StartMini: " .. Stats.StartMini)
+    table.insert(output, "  CatchFish: " .. Stats.CatchFish)
+    table.insert(output, "  CancelFish: " .. Stats.CancelFish)
+    table.insert(output, string.rep("-", 80))
     
     for i, log in ipairs(LoggedCalls) do
-        print(log)
+        table.insert(output, log)
     end
     
-    print(string.rep("=", 80))
-    print("END OF LOG")
-    print(string.rep("=", 80) .. "\n")
+    table.insert(output, string.rep("=", 80))
+    table.insert(output, "END OF LOG")
+    table.insert(output, string.rep("=", 80))
+    
+    local finalOutput = table.concat(output, "\n")
+    print(finalOutput)
+    
+    return finalOutput
 end
 
 local function ExportAsCode()
     if #LoggedCalls == 0 then
-        print("No logged calls to export!")
-        return
+        return "No logged calls to export!"
     end
     
-    print("\n" .. string.rep("=", 80))
-    print("LUA CODE - Copy everything below")
-    print(string.rep("=", 80))
-    print([[
+    local output = {}
+    
+    table.insert(output, string.rep("=", 80))
+    table.insert(output, "LUA CODE - Auto Fishing Pattern")
+    table.insert(output, string.rep("=", 80))
+    table.insert(output, [[
 -- Auto-generated fishing pattern
 local function ReplayPattern()
     local api = {
@@ -236,8 +244,7 @@ local function ReplayPattern()
         }
     }
     
-    local calls = {
-]])
+    local calls = {]])
     
     -- Parse dan export calls
     for i, log in ipairs(LoggedCalls) do
@@ -246,11 +253,11 @@ local function ReplayPattern()
         local args = log:match("%((.*)%)")
         
         if delta and funcName and args then
-            print(string.format('        {delta = %.6f, func = "%s", args = {%s}},', tonumber(delta), funcName, args))
+            table.insert(output, string.format('        {delta = %.6f, func = "%s", args = {%s}},', tonumber(delta), funcName, args))
         end
     end
     
-    print([[    }
+    table.insert(output, [[    }
     
     for _, call in ipairs(calls) do
         task.wait(call.delta)
@@ -267,15 +274,19 @@ local function ReplayPattern()
     end
 end
 
--- Run the pattern
+-- Loop pattern
 while true do
     ReplayPattern()
-end
-]])
+end]])
     
-    print(string.rep("=", 80))
-    print("END OF CODE")
-    print(string.rep("=", 80) .. "\n")
+    table.insert(output, string.rep("=", 80))
+    table.insert(output, "END OF CODE")
+    table.insert(output, string.rep("=", 80))
+    
+    local finalOutput = table.concat(output, "\n")
+    print(finalOutput)
+    
+    return finalOutput
 end
 
 -- UI
@@ -338,27 +349,48 @@ local ExportSection = Main:Section({
 })
 
 ExportSection:Button({
-    Title = "Export as Log",
-    Description = "Export readable log to console",
+    Title = "📋 Copy Log to Clipboard",
+    Description = "Copy readable log (Delta)",
     Callback = function()
-        ExportLog()
-        Window:Notify({
-            Title = "Exported",
-            Content = "Check console (F9) and copy the log",
-            Duration = 3
-        })
+        local logText = ExportLog()
+        
+        pcall(function()
+            setclipboard(logText)
+            Window:Notify({
+                Title = "✅ Copied!",
+                Content = "Log copied to clipboard!",
+                Duration = 2
+            })
+        end)
     end
 })
 
 ExportSection:Button({
-    Title = "Export as Lua Code",
-    Description = "Export as executable Lua script",
+    Title = "📋 Copy Lua Code to Clipboard",
+    Description = "Copy executable script (Delta)",
     Callback = function()
-        ExportAsCode()
+        local codeText = ExportAsCode()
+        
+        pcall(function()
+            setclipboard(codeText)
+            Window:Notify({
+                Title = "✅ Copied!",
+                Content = "Code copied to clipboard!",
+                Duration = 2
+            })
+        end)
+    end
+})
+
+ExportSection:Button({
+    Title = "🖨️ Print to Console",
+    Description = "Print log to console (F9)",
+    Callback = function()
+        ExportLog()
         Window:Notify({
-            Title = "Exported",
-            Content = "Check console (F9) and copy the code",
-            Duration = 3
+            Title = "Printed",
+            Content = "Check console (F9)",
+            Duration = 2
         })
     end
 })
@@ -396,15 +428,15 @@ end)
 
 Window:Notify({
     Title = "Fish Logger Loaded!",
-    Content = "Record calls with delta timing",
+    Content = "Record & copy with Delta timing",
     Duration = 5
 })
 
 print("🎣 Fish Call Logger Loaded!")
-print("Press F9 to open console")
+print("Delta Android supported - Click button to copy!")
 print("\nInstructions:")
 print("1. Toggle 'Start Logging'")
 print("2. Fish manually (1-2 cycles)")
 print("3. Toggle off logging")
-print("4. Click 'Export as Log' or 'Export as Lua Code'")
-print("5. Copy from console")
+print("4. Click '📋 Copy Log' or '📋 Copy Lua Code'")
+print("5. Paste anywhere (clipboard ready!)")
