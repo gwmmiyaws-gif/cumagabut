@@ -26,7 +26,7 @@ local mods = {
 
 local api = {
     Events = {
-        EquipTool = mods.Net["RE/EquipTool"],
+        EquipTool = mods.Net["RE/EquipToolFromHotbar"],
     },
     Functions = {
         ChargeRod = mods.Net["RF/ChargeFishingRod"],
