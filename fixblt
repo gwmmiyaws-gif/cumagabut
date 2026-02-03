@@ -1,18 +1,4 @@
-local WindUI
-
-do
-    local ok, result = pcall(function()
-        return require("./src/Init")
-    end)
-    
-    if ok then
-        WindUI = result
-    else 
-        WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
-    end
-end
-
-wait(1)
+local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
 
 local svc = {
     Players = game:GetService("Players"),
@@ -20,24 +6,36 @@ local svc = {
 }
 
 local player = svc.Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
+
+repeat wait() until player.Character
+local character = player.Character
 local hrp = character:WaitForChild("HumanoidRootPart")
 
-wait(2)
+wait(1)
 
-local Net = svc.RS.Packages._Index["sleitnick_net@0.2.0"].net
+local Net = svc.RS:FindFirstChild("Packages")
+if not Net then
+    warn("Packages not found")
+    return
+end
 
-local api = {
-    Events = {
-        EquipTool = Net["RE/EquipToolFromHotbar"],
-    },
-    Functions = {
-        ChargeRod = Net["RF/ChargeFishingRod"],
-        StartMini = Net["RF/RequestFishingMinigameStarted"],
-        CatchFish = Net["RF/CatchFishCompleted"],
-        CancelFish = Net["RF/CancelFishingInputs"],
-    },
-}
+Net = Net:FindFirstChild("_Index")
+if not Net then
+    warn("_Index not found")
+    return
+end
+
+Net = Net:FindFirstChild("sleitnick_net@0.2.0")
+if not Net then
+    warn("sleitnick_net not found")
+    return
+end
+
+Net = Net:FindFirstChild("net")
+if not Net then
+    warn("net not found")
+    return
+end
 
 local Window = WindUI:CreateWindow({
     Title = "LS Hub - Fish It",
@@ -54,128 +52,97 @@ local Window = WindUI:CreateWindow({
         Anonymous = true,
     },
     HideSearchBar = true,
-    OpenButton = {
-        Title = "Open LS Hub",
-        CornerRadius = UDim.new(0.3, 0),
-        StrokeThickness = 3,
-        Enabled = true,
-        Draggable = true,
-        OnlyMobile = false,
-        Color = ColorSequence.new(
-            Color3.fromRGB(107, 49, 255), 
-            Color3.fromRGB(215, 48, 221)
-        )
-    },
-    Topbar = {
-        Height = 44,
-        ButtonsType = "Default",
-    },
 })
 
 local Fish10 = Window:Tab({
-    Title = "Fishing Cycle",
+    Title = "Fishing",
     Icon = "bird",
-    Locked = false,
 })
 
-local Protected = false
-local FishingSession = 0
+local Running = false
 
 _G.DelayComplete = 0
 _G.DelayCycle = 0.1
 
-local function IsSessionAlive(session)
-    return FishingSession == session and Protected
-end
-
-local function SpamFishing(session)
-    spawn(function()
-        pcall(function()
-            api.Events.EquipTool:FireServer(1)
-        end)
-    end)
-    
-    wait(0.5)
-    
-    while IsSessionAlive(session) do
-        spawn(function()
-            pcall(function()
-                local now = workspace:GetServerTimeNow()
-                api.Functions.ChargeRod:InvokeServer(now)
-            end)
-        end)
-        
-        if _G.DelayComplete > 0 then wait(_G.DelayComplete) end
-        
-        spawn(function()
-            pcall(function()
-                local now = workspace:GetServerTimeNow()
-                api.Functions.StartMini:InvokeServer(-1, 1, now)
-            end)
-        end)
-        
-        if _G.DelayComplete > 0 then wait(_G.DelayComplete) end
-        
-        spawn(function()
-            pcall(function()
-                api.Functions.CatchFish:InvokeServer()
-            end)
-        end)
-        
-        if _G.DelayComplete > 0 then wait(_G.DelayComplete) end
-        
-        spawn(function()
-            pcall(function()
-                api.Functions.CancelFish:InvokeServer()
-            end)
-        end)
-        
-        if _G.DelayCycle > 0 then 
-            wait(_G.DelayCycle)
-        else
-            wait(0.03)
-        end
-    end
-end
-
 Fish10:Input({
     Title = "Delay Complete",
-    Description = "Delay per action (0 = instant)",
-    Value = tostring(_G.DelayComplete),
+    Description = "Delay per action",
+    Value = "0",
     Callback = function(v)
-        local n = tonumber(v)
-        if n and n >= 0 then
-            _G.DelayComplete = n
-        end
+        _G.DelayComplete = tonumber(v) or 0
     end,
 })
 
 Fish10:Input({
     Title = "Delay Cycle", 
-    Description = "Delay antar cycle fishing",
-    Value = tostring(_G.DelayCycle),
+    Description = "Delay cycle",
+    Value = "0.1",
     Callback = function(v)
-        local n = tonumber(v)
-        if n and n >= 0 then
-            _G.DelayCycle = n
-        end
+        _G.DelayCycle = tonumber(v) or 0.1
     end,
 })
 
 Fish10:Toggle({
-    Title = "Start Auto Fishing",
+    Title = "Auto Fish",
     Default = false,
     Callback = function(s)
+        Running = s
+        
         if s then
-            Protected = true
-            FishingSession = FishingSession + 1
-            local currentSession = FishingSession
-            
             spawn(function()
-                SpamFishing(currentSession)
+                local EquipTool = Net:FindFirstChild("RE/EquipToolFromHotbar")
+                local ChargeRod = Net:FindFirstChild("RF/ChargeFishingRod")
+                local StartMini = Net:FindFirstChild("RF/RequestFishingMinigameStarted")
+                local CatchFish = Net:FindFirstChild("RF/CatchFishCompleted")
+                local CancelFish = Net:FindFirstChild("RF/CancelFishingInputs")
+                
+                if EquipTool then
+                    pcall(function() EquipTool:FireServer(1) end)
+                    wait(0.5)
+                end
+                
+                while Running do
+                    if ChargeRod then
+                        spawn(function()
+                            pcall(function()
+                                ChargeRod:InvokeServer(workspace:GetServerTimeNow())
+                            end)
+                        end)
+                    end
+                    
+                    if _G.DelayComplete > 0 then wait(_G.DelayComplete) end
+                    
+                    if StartMini then
+                        spawn(function()
+                            pcall(function()
+                                StartMini:InvokeServer(-1, 1, workspace:GetServerTimeNow())
+                            end)
+                        end)
+                    end
+                    
+                    if _G.DelayComplete > 0 then wait(_G.DelayComplete) end
+                    
+                    if CatchFish then
+                        spawn(function()
+                            pcall(function()
+                                CatchFish:InvokeServer()
+                            end)
+                        end)
+                    end
+                    
+                    if _G.DelayComplete > 0 then wait(_G.DelayComplete) end
+                    
+                    if CancelFish then
+                        spawn(function()
+                            pcall(function()
+                                CancelFish:InvokeServer()
+                            end)
+                        end)
+                    end
+                    
+                    wait(_G.DelayCycle)
+                end
             end)
-        else
-            Protected = false
         end
     end,
 })
