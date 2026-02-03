@@ -13,6 +13,7 @@ local api = {
         ChargeRod = mods.Net["RF/ChargeFishingRod"],
         StartMini = mods.Net["RF/RequestFishingMinigameStarted"],
         CatchFish = mods.Net["RF/CatchFishCompleted"],
+        CancelFish = mods.Net["RF/CancelFishingInputs"],
     },
 }
 
@@ -32,7 +33,7 @@ local Main = Window:Tab({
 local Running = false
 _G.DelayComplete = 0.01
 _G.DelayCycle = 0.1
-_G.SpamCount = 50 -- jumlah spam per cycle
+_G.SpamCount = 50
 
 local function AutoFish()
     while Running do
@@ -52,8 +53,11 @@ local function AutoFish()
                 task.wait(_G.DelayComplete)
             end
             
-            -- Complete catch
+            -- Catch + Cancel pattern
             api.Functions.CatchFish:InvokeServer()
+            task.wait(_G.DelayComplete)
+            
+            api.Functions.CancelFish:InvokeServer()
             
             task.wait(_G.DelayCycle)
         end)
