@@ -41,24 +41,24 @@ local Fish10 = Window:Tab({
 
 local Running = false
 
-_G.DelayComplete = 0.01
-_G.DelayCycle = 0.5
+_G.DelayComplete = 0.05
+_G.DelayCycle = 1
 
 Fish10:Input({
     Title = "Delay Complete",
-    Description = "Delay spam (makin kecil makin cepet)",
-    Value = "0.01",
+    Description = "Delay spam (recommend: 0.03-0.1)",
+    Value = "0.05",
     Callback = function(v)
-        _G.DelayComplete = tonumber(v) or 0.01
+        _G.DelayComplete = tonumber(v) or 0.05
     end,
 })
 
 Fish10:Input({
     Title = "Delay Cycle", 
-    Description = "Delay catch/cancel (makin besar makin lama)",
-    Value = "0.5",
+    Description = "Delay catch/cancel (recommend: 0.5-2)",
+    Value = "1",
     Callback = function(v)
-        _G.DelayCycle = tonumber(v) or 0.5
+        _G.DelayCycle = tonumber(v) or 1
     end,
 })
 
@@ -80,25 +80,25 @@ Fish10:Toggle({
                 wait(0.5)
                 
                 while Running do
-                    for i = 1, 100 do
+                    for i = 1, 30 do
                         if not Running then break end
                         
                         local now = workspace:GetServerTimeNow()
                         
-                        spawn(function()
-                            pcall(function()
-                                ChargeRod:InvokeServer(now)
-                            end)
+                        pcall(function()
+                            ChargeRod:InvokeServer(now)
                         end)
                         
-                        spawn(function()
-                            pcall(function()
-                                StartMini:InvokeServer(-1, 1, now)
-                            end)
+                        wait(_G.DelayComplete / 2)
+                        
+                        pcall(function()
+                            StartMini:InvokeServer(-1, 1, now)
                         end)
                         
-                        wait(_G.DelayComplete)
+                        wait(_G.DelayComplete / 2)
                     end
+                    
+                    wait(0.1)
                     
                     pcall(function()
                         CatchFish:InvokeServer()
