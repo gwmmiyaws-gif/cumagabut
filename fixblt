@@ -1,5 +1,7 @@
 local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
 
+wait(2)
+
 local svc = {
     Players = game:GetService("Players"),
     RS = game:GetService("ReplicatedStorage"),
@@ -7,20 +9,13 @@ local svc = {
 
 local player = svc.Players.LocalPlayer
 
-repeat task.wait() until player.Character
+repeat wait() until player.Character
 local character = player.Character
 local hrp = character:WaitForChild("HumanoidRootPart")
 
-task.wait(1)
+wait(1)
 
-local Net = svc.RS:FindFirstChild("Packages")
-if not Net then warn("Packages not found") return end
-Net = Net:FindFirstChild("_Index")
-if not Net then warn("_Index not found") return end
-Net = Net:FindFirstChild("sleitnick_net@0.2.0")
-if not Net then warn("sleitnick_net not found") return end
-Net = Net:FindFirstChild("net")
-if not Net then warn("net not found") return end
+local Net = svc.RS.Packages._Index["sleitnick_net@0.2.0"].net
 
 local Window = WindUI:CreateWindow({
     Title = "LS Hub - Fish It",
@@ -51,7 +46,7 @@ _G.DelayCycle = 2
 
 Fish10:Input({
     Title = "Delay Complete",
-    Description = "Delay spam charge+start (cepet)",
+    Description = "Delay spam charge+start",
     Value = "0.03",
     Callback = function(v)
         _G.DelayComplete = tonumber(v) or 0.03
@@ -60,7 +55,7 @@ Fish10:Input({
 
 Fish10:Input({
     Title = "Delay Cycle", 
-    Description = "Delay catch/cancel (slow)",
+    Description = "Delay catch/cancel",
     Value = "2",
     Callback = function(v)
         _G.DelayCycle = tonumber(v) or 2
@@ -74,64 +69,54 @@ Fish10:Toggle({
         Running = s
         
         if s then
-            task.spawn(function()
-                local EquipTool = Net:FindFirstChild("RE/EquipToolFromHotbar")
-                local ChargeRod = Net:FindFirstChild("RF/ChargeFishingRod")
-                local StartMini = Net:FindFirstChild("RF/RequestFishingMinigameStarted")
+            spawn(function()
+                local EquipTool = Net["RE/EquipToolFromHotbar"]
+                local ChargeRod = Net["RF/ChargeFishingRod"]
+                local StartMini = Net["RF/RequestFishingMinigameStarted"]
                 
-                if EquipTool then
-                    pcall(function() EquipTool:FireServer(1) end)
-                    task.wait(0.5)
-                end
+                pcall(function() EquipTool:FireServer(1) end)
+                wait(0.5)
                 
                 while Running do
                     local now = workspace:GetServerTimeNow()
                     
-                    if ChargeRod then
-                        task.spawn(function()
-                            pcall(function()
-                                ChargeRod:InvokeServer(now)
-                            end)
+                    spawn(function()
+                        pcall(function()
+                            ChargeRod:InvokeServer(now)
                         end)
-                    end
+                    end)
                     
-                    if StartMini then
-                        task.spawn(function()
-                            pcall(function()
-                                StartMini:InvokeServer(-1, 1, now)
-                            end)
+                    spawn(function()
+                        pcall(function()
+                            StartMini:InvokeServer(-1, 1, now)
                         end)
-                    end
+                    end)
                     
-                    task.wait(_G.DelayComplete)
+                    wait(_G.DelayComplete)
                 end
             end)
             
-            task.spawn(function()
-                local CatchFish = Net:FindFirstChild("RF/CatchFishCompleted")
-                local CancelFish = Net:FindFirstChild("RF/CancelFishingInputs")
+            spawn(function()
+                local CatchFish = Net["RF/CatchFishCompleted"]
+                local CancelFish = Net["RF/CancelFishingInputs"]
                 
-                task.wait(1)
+                wait(1)
                 
-                local useCancel = false
+                local toggle = false
                 
                 while Running do
-                    if useCancel then
-                        if CancelFish then
-                            pcall(function()
-                                CancelFish:InvokeServer()
-                            end)
-                        end
+                    if toggle then
+                        pcall(function()
+                            CancelFish:InvokeServer()
+                        end)
                     else
-                        if CatchFish then
-                            pcall(function()
-                                CatchFish:InvokeServer()
-                            end)
-                        end
+                        pcall(function()
+                            CatchFish:InvokeServer()
+                        end)
                     end
                     
-                    useCancel = not useCancel
-                    task.wait(_G.DelayCycle)
+                    toggle = not toggle
+                    wait(_G.DelayCycle)
                 end
             end)
         end
