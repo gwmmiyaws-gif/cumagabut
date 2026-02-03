@@ -12,52 +12,32 @@ do
     end
 end
 
+wait(1)
+
 local svc = {
     Players = game:GetService("Players"),
     RS = game:GetService("ReplicatedStorage"),
-    RunService = game:GetService("RunService"),
 }
 
 local player = svc.Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local hrp = character:WaitForChild("HumanoidRootPart")
 
-local function waitForCharacter()
-    return player.Character or player.CharacterAdded:Wait()
-end
+wait(2)
 
-local character = waitForCharacter()
-local hrp = character:WaitForChild("HumanoidRootPart", 10)
-
-local mods = {
-    Net = nil,
-}
+local Net = svc.RS.Packages._Index["sleitnick_net@0.2.0"].net
 
 local api = {
-    Events = {},
-    Functions = {},
+    Events = {
+        EquipTool = Net["RE/EquipToolFromHotbar"],
+    },
+    Functions = {
+        ChargeRod = Net["RF/ChargeFishingRod"],
+        StartMini = Net["RF/RequestFishingMinigameStarted"],
+        CatchFish = Net["RF/CatchFishCompleted"],
+        CancelFish = Net["RF/CancelFishingInputs"],
+    },
 }
-
-local function InitializeAPI()
-    local success, err = pcall(function()
-        mods.Net = svc.RS:WaitForChild("Packages", 5):WaitForChild("_Index", 5):WaitForChild("sleitnick_net@0.2.0", 5):WaitForChild("net", 5)
-        
-        api.Events.EquipTool = mods.Net:WaitForChild("RE/EquipToolFromHotbar", 5)
-        api.Functions.ChargeRod = mods.Net:WaitForChild("RF/ChargeFishingRod", 5)
-        api.Functions.StartMini = mods.Net:WaitForChild("RF/RequestFishingMinigameStarted", 5)
-        api.Functions.CatchFish = mods.Net:WaitForChild("RF/CatchFishCompleted", 5)
-        api.Functions.CancelFish = mods.Net:WaitForChild("RF/CancelFishingInputs", 5)
-    end)
-    
-    return success
-end
-
-if not InitializeAPI() then
-    warn("Failed to initialize API, retrying...")
-    task.wait(2)
-    if not InitializeAPI() then
-        error("Could not find game API")
-        return
-    end
-end
 
 local Window = WindUI:CreateWindow({
     Title = "LS Hub - Fish It",
@@ -76,7 +56,7 @@ local Window = WindUI:CreateWindow({
     HideSearchBar = true,
     OpenButton = {
         Title = "Open LS Hub",
-        CornerRadius = UDim.new(0.3,0),
+        CornerRadius = UDim.new(0.3, 0),
         StrokeThickness = 3,
         Enabled = true,
         Draggable = true,
@@ -109,57 +89,51 @@ local function IsSessionAlive(session)
 end
 
 local function SpamFishing(session)
-    local equipped = pcall(function()
-        api.Events.EquipTool:FireServer(1)
+    spawn(function()
+        pcall(function()
+            api.Events.EquipTool:FireServer(1)
+        end)
     end)
     
-    if equipped then
-        task.wait(0.5)
-    end
+    wait(0.5)
     
     while IsSessionAlive(session) do
-        local success, err = pcall(function()
-            local now = workspace:GetServerTimeNow()
-            
-            task.spawn(function()
-                pcall(function()
-                    api.Functions.ChargeRod:InvokeServer(now)
-                end)
-            end)
-            
-            if _G.DelayComplete > 0 then task.wait(_G.DelayComplete) end
-            
-            task.spawn(function()
-                pcall(function()
-                    api.Functions.StartMini:InvokeServer(-1, 1, now)
-                end)
-            end)
-            
-            if _G.DelayComplete > 0 then task.wait(_G.DelayComplete) end
-            
-            task.spawn(function()
-                pcall(function()
-                    api.Functions.CatchFish:InvokeServer()
-                end)
-            end)
-            
-            if _G.DelayComplete > 0 then task.wait(_G.DelayComplete) end
-            
-            task.spawn(function()
-                pcall(function()
-                    api.Functions.CancelFish:InvokeServer()
-                end)
+        spawn(function()
+            pcall(function()
+                local now = workspace:GetServerTimeNow()
+                api.Functions.ChargeRod:InvokeServer(now)
             end)
         end)
         
-        if not success then
-            warn("Fishing error:", err)
-        end
+        if _G.DelayComplete > 0 then wait(_G.DelayComplete) end
+        
+        spawn(function()
+            pcall(function()
+                local now = workspace:GetServerTimeNow()
+                api.Functions.StartMini:InvokeServer(-1, 1, now)
+            end)
+        end)
+        
+        if _G.DelayComplete > 0 then wait(_G.DelayComplete) end
+        
+        spawn(function()
+            pcall(function()
+                api.Functions.CatchFish:InvokeServer()
+            end)
+        end)
+        
+        if _G.DelayComplete > 0 then wait(_G.DelayComplete) end
+        
+        spawn(function()
+            pcall(function()
+                api.Functions.CancelFish:InvokeServer()
+            end)
+        end)
         
         if _G.DelayCycle > 0 then 
-            task.wait(_G.DelayCycle)
+            wait(_G.DelayCycle)
         else
-            task.wait()
+            wait(0.03)
         end
     end
 end
@@ -197,23 +171,11 @@ Fish10:Toggle({
             FishingSession = FishingSession + 1
             local currentSession = FishingSession
             
-            task.spawn(function()
-                local success, err = pcall(function()
-                    SpamFishing(currentSession)
-                end)
-                
-                if not success then
-                    warn("Fishing loop error:", err)
-                    Protected = false
-                end
+            spawn(function()
+                SpamFishing(currentSession)
             end)
         else
             Protected = false
         end
     end,
 })
-
-player.CharacterAdded:Connect(function(char)
-    character = char
-    hrp = char:WaitForChild("HumanoidRootPart", 10)
-end)
