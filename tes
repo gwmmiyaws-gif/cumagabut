@@ -31,34 +31,44 @@ local Main = Window:Tab({
 })
 
 local Running = false
-_G.DelayComplete = 0.01
-_G.DelayCycle = 0.1
-_G.SpamCount = 50
+_G.DelayComplete = 0.001  -- Super fast
+_G.DelayCycle = 0.05      -- Cepet banget cycle
+_G.SpamAmount = 200       -- Banyak spam
 
 local function AutoFish()
     while Running do
         pcall(function()
-            -- SPAM PHASE - spam ChargeRod + StartMini
-            for i = 1, _G.SpamCount do
+            -- FULL SPAM ChargeRod + StartMini
+            for i = 1, _G.SpamAmount do
+                if not Running then break end
+                
                 local now = workspace:GetServerTimeNow()
                 
+                -- Spam ChargeRod
                 pcall(function()
-                    api.Functions.ChargeRod:InvokeServer(now + (i * 0.000001))
+                    api.Functions.ChargeRod:InvokeServer(now + (i * 0.0000001))
                 end)
                 
+                -- Spam StartMini
                 pcall(function()
-                    api.Functions.StartMini:InvokeServer(-1, 1, now + (i * 0.000001))
+                    api.Functions.StartMini:InvokeServer(-1, 1, now + (i * 0.0000001))
                 end)
                 
                 task.wait(_G.DelayComplete)
             end
             
-            -- Catch + Cancel pattern
-            api.Functions.CatchFish:InvokeServer()
-            task.wait(_G.DelayComplete)
+            -- Complete dengan Catch & Cancel
+            pcall(function()
+                api.Functions.CatchFish:InvokeServer()
+            end)
             
-            api.Functions.CancelFish:InvokeServer()
+            task.wait(0.01)
             
+            pcall(function()
+                api.Functions.CancelFish:InvokeServer()
+            end)
+            
+            -- Tunggu sebelum cycle berikutnya
             task.wait(_G.DelayCycle)
         end)
     end
@@ -78,10 +88,10 @@ Main:Toggle({
 Main:Input({
     Title = "Delay Complete",
     Description = "Delay antara spam (detik)",
-    Value = "0.01",
+    Value = "0.001",
     Callback = function(v)
         local n = tonumber(v)
-        if n and n >= 0.001 then
+        if n and n >= 0.0001 then
             _G.DelayComplete = n
         end
     end,
@@ -90,25 +100,25 @@ Main:Input({
 Main:Input({
     Title = "Delay Cycle",
     Description = "Delay per cycle (detik)",
-    Value = "0.1",
+    Value = "0.05",
     Callback = function(v)
         local n = tonumber(v)
-        if n and n >= 0 then
+        if n and n >= 0.001 then
             _G.DelayCycle = n
         end
     end,
 })
 
 Main:Input({
-    Title = "Spam Count",
+    Title = "Spam Amount",
     Description = "Jumlah spam per cycle",
-    Value = "50",
+    Value = "200",
     Callback = function(v)
         local n = tonumber(v)
         if n and n > 0 then
-            _G.SpamCount = n
+            _G.SpamAmount = n
         end
     end,
 })
 
-print("🎣 Auto Fish Loaded!")
+print("🎣 Auto Fish Loaded! FULL SPAM MODE")
