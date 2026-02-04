@@ -21,13 +21,18 @@ local Window = WindUI:CreateWindow({
     Title = "Fish Call Logger",
     Author = "Patungin",
     Folder = "FishLogger",
-    Size = UDim2.fromOffset(500, 400),
+    Size = UDim2.fromOffset(600, 500),
     ToggleKey = Enum.KeyCode.G,
 })
 
 local Main = Window:Tab({
     Title = "Logger",
     Icon = "file-text",
+})
+
+local Output = Window:Tab({
+    Title = "Output",
+    Icon = "copy",
 })
 
 -- Storage
@@ -50,6 +55,10 @@ local OriginalChargeRod = api.Functions.ChargeRod.InvokeServer
 local OriginalStartMini = api.Functions.StartMini.InvokeServer
 local OriginalCatchFish = api.Functions.CatchFish.InvokeServer
 local OriginalCancelFish = api.Functions.CancelFish.InvokeServer
+
+-- Output Display Variables
+local LogOutputText = ""
+local CodeOutputText = ""
 
 local function FormatArgs(args)
     local formatted = {}
@@ -93,7 +102,6 @@ local function StartLogging()
             )
             
             table.insert(LoggedCalls, logEntry)
-            print(logEntry)
             
             Stats.ChargeRod = Stats.ChargeRod + 1
             Stats.TotalCalls = Stats.TotalCalls + 1
@@ -121,7 +129,6 @@ local function StartLogging()
             )
             
             table.insert(LoggedCalls, logEntry)
-            print(logEntry)
             
             Stats.StartMini = Stats.StartMini + 1
             Stats.TotalCalls = Stats.TotalCalls + 1
@@ -149,7 +156,6 @@ local function StartLogging()
             )
             
             table.insert(LoggedCalls, logEntry)
-            print(logEntry)
             
             Stats.CatchFish = Stats.CatchFish + 1
             Stats.TotalCalls = Stats.TotalCalls + 1
@@ -177,7 +183,6 @@ local function StartLogging()
             )
             
             table.insert(LoggedCalls, logEntry)
-            print(logEntry)
             
             Stats.CancelFish = Stats.CancelFish + 1
             Stats.TotalCalls = Stats.TotalCalls + 1
@@ -188,16 +193,14 @@ local function StartLogging()
     end
 end
 
-local function ExportLog()
+local function GenerateLogOutput()
     if #LoggedCalls == 0 then
-        return "No logged calls to export!"
+        return "No logged calls yet. Start logging and fish manually!"
     end
     
     local output = {}
     
-    table.insert(output, string.rep("=", 80))
-    table.insert(output, "FISHING CALL LOG")
-    table.insert(output, string.rep("=", 80))
+    table.insert(output, "========== FISHING CALL LOG ==========")
     table.insert(output, "Total Calls: " .. Stats.TotalCalls)
     table.insert(output, string.format("Duration: %.3fs", tick() - LogStartTime))
     table.insert(output, "")
@@ -206,47 +209,42 @@ local function ExportLog()
     table.insert(output, "  StartMini: " .. Stats.StartMini)
     table.insert(output, "  CatchFish: " .. Stats.CatchFish)
     table.insert(output, "  CancelFish: " .. Stats.CancelFish)
-    table.insert(output, string.rep("-", 80))
+    table.insert(output, "--------------------------------------")
+    table.insert(output, "")
     
     for i, log in ipairs(LoggedCalls) do
         table.insert(output, log)
     end
     
-    table.insert(output, string.rep("=", 80))
-    table.insert(output, "END OF LOG")
-    table.insert(output, string.rep("=", 80))
+    table.insert(output, "")
+    table.insert(output, "========== END OF LOG ==========")
     
-    local finalOutput = table.concat(output, "\n")
-    print(finalOutput)
-    
-    return finalOutput
+    return table.concat(output, "\n")
 end
 
-local function ExportAsCode()
+local function GenerateCodeOutput()
     if #LoggedCalls == 0 then
-        return "No logged calls to export!"
+        return "No logged calls yet. Start logging and fish manually!"
     end
     
     local output = {}
     
-    table.insert(output, string.rep("=", 80))
-    table.insert(output, "LUA CODE - Auto Fishing Pattern")
-    table.insert(output, string.rep("=", 80))
-    table.insert(output, [[
--- Auto-generated fishing pattern
-local function ReplayPattern()
-    local api = {
-        Functions = {
-            ChargeRod = game:GetService("ReplicatedStorage").Packages._Index["sleitnick_net@0.2.0"].net["RF/ChargeFishingRod"],
-            StartMini = game:GetService("ReplicatedStorage").Packages._Index["sleitnick_net@0.2.0"].net["RF/RequestFishingMinigameStarted"],
-            CatchFish = game:GetService("ReplicatedStorage").Packages._Index["sleitnick_net@0.2.0"].net["RF/CatchFishCompleted"],
-            CancelFish = game:GetService("ReplicatedStorage").Packages._Index["sleitnick_net@0.2.0"].net["RF/CancelFishingInputs"],
-        }
-    }
+    table.insert(output, "-- Auto-generated fishing pattern")
+    table.insert(output, "-- Total Calls: " .. Stats.TotalCalls)
+    table.insert(output, "")
+    table.insert(output, "local function ReplayPattern()")
+    table.insert(output, "    local api = {")
+    table.insert(output, "        Functions = {")
+    table.insert(output, '            ChargeRod = game:GetService("ReplicatedStorage").Packages._Index["sleitnick_net@0.2.0"].net["RF/ChargeFishingRod"],')
+    table.insert(output, '            StartMini = game:GetService("ReplicatedStorage").Packages._Index["sleitnick_net@0.2.0"].net["RF/RequestFishingMinigameStarted"],')
+    table.insert(output, '            CatchFish = game:GetService("ReplicatedStorage").Packages._Index["sleitnick_net@0.2.0"].net["RF/CatchFishCompleted"],')
+    table.insert(output, '            CancelFish = game:GetService("ReplicatedStorage").Packages._Index["sleitnick_net@0.2.0"].net["RF/CancelFishingInputs"],')
+    table.insert(output, "        }")
+    table.insert(output, "    }")
+    table.insert(output, "")
+    table.insert(output, "    local calls = {")
     
-    local calls = {]])
-    
-    -- Parse dan export calls
+    -- Parse calls
     for i, log in ipairs(LoggedCalls) do
         local delta = log:match("%[Δ([%d%.]+)s%]")
         local funcName = log:match("]%s(%w+)%(")
@@ -257,39 +255,32 @@ local function ReplayPattern()
         end
     end
     
-    table.insert(output, [[    }
+    table.insert(output, "    }")
+    table.insert(output, "")
+    table.insert(output, "    for _, call in ipairs(calls) do")
+    table.insert(output, "        task.wait(call.delta)")
+    table.insert(output, "")
+    table.insert(output, '        if call.func == "ChargeRod" then')
+    table.insert(output, "            api.Functions.ChargeRod:InvokeServer(unpack(call.args))")
+    table.insert(output, '        elseif call.func == "StartMini" then')
+    table.insert(output, "            api.Functions.StartMini:InvokeServer(unpack(call.args))")
+    table.insert(output, '        elseif call.func == "CatchFish" then')
+    table.insert(output, "            api.Functions.CatchFish:InvokeServer(unpack(call.args))")
+    table.insert(output, '        elseif call.func == "CancelFish" then')
+    table.insert(output, "            api.Functions.CancelFish:InvokeServer(unpack(call.args))")
+    table.insert(output, "        end")
+    table.insert(output, "    end")
+    table.insert(output, "end")
+    table.insert(output, "")
+    table.insert(output, "-- Loop the pattern")
+    table.insert(output, "while true do")
+    table.insert(output, "    ReplayPattern()")
+    table.insert(output, "end")
     
-    for _, call in ipairs(calls) do
-        task.wait(call.delta)
-        
-        if call.func == "ChargeRod" then
-            api.Functions.ChargeRod:InvokeServer(unpack(call.args))
-        elseif call.func == "StartMini" then
-            api.Functions.StartMini:InvokeServer(unpack(call.args))
-        elseif call.func == "CatchFish" then
-            api.Functions.CatchFish:InvokeServer(unpack(call.args))
-        elseif call.func == "CancelFish" then
-            api.Functions.CancelFish:InvokeServer(unpack(call.args))
-        end
-    end
+    return table.concat(output, "\n")
 end
 
--- Loop pattern
-while true do
-    ReplayPattern()
-end]])
-    
-    table.insert(output, string.rep("=", 80))
-    table.insert(output, "END OF CODE")
-    table.insert(output, string.rep("=", 80))
-    
-    local finalOutput = table.concat(output, "\n")
-    print(finalOutput)
-    
-    return finalOutput
-end
-
--- UI
+-- UI - Main Tab
 local ControlSection = Main:Section({
     Title = "Logging Controls"
 })
@@ -303,14 +294,12 @@ ControlSection:Toggle({
         
         if state then
             StartLogging()
-            print("\n[LOGGER] Started logging fishing calls...")
             Window:Notify({
                 Title = "Logging Started",
-                Content = "Go fish manually! Check console (F9)",
+                Content = "Go fish manually now!",
                 Duration = 3
             })
         else
-            print("[LOGGER] Stopped logging")
             Window:Notify({
                 Title = "Logging Stopped",
                 Content = "Logged " .. Stats.TotalCalls .. " calls",
@@ -344,59 +333,27 @@ local CancelLabel = StatsSection:Label({
     Title = "CancelFish: 0"
 })
 
-local ExportSection = Main:Section({
-    Title = "Export Options"
+local ActionsSection = Main:Section({
+    Title = "Actions"
 })
 
-ExportSection:Button({
-    Title = "📋 Copy Log to Clipboard",
-    Description = "Copy readable log (Delta)",
+ActionsSection:Button({
+    Title = "Generate Output",
+    Description = "Generate log & code in Output tab",
     Callback = function()
-        local logText = ExportLog()
+        LogOutputText = GenerateLogOutput()
+        CodeOutputText = GenerateCodeOutput()
         
-        pcall(function()
-            setclipboard(logText)
-            Window:Notify({
-                Title = "✅ Copied!",
-                Content = "Log copied to clipboard!",
-                Duration = 2
-            })
-        end)
-    end
-})
-
-ExportSection:Button({
-    Title = "📋 Copy Lua Code to Clipboard",
-    Description = "Copy executable script (Delta)",
-    Callback = function()
-        local codeText = ExportAsCode()
-        
-        pcall(function()
-            setclipboard(codeText)
-            Window:Notify({
-                Title = "✅ Copied!",
-                Content = "Code copied to clipboard!",
-                Duration = 2
-            })
-        end)
-    end
-})
-
-ExportSection:Button({
-    Title = "🖨️ Print to Console",
-    Description = "Print log to console (F9)",
-    Callback = function()
-        ExportLog()
         Window:Notify({
-            Title = "Printed",
-            Content = "Check console (F9)",
-            Duration = 2
+            Title = "Generated!",
+            Content = "Check Output tab to view & copy",
+            Duration = 3
         })
     end
 })
 
-ExportSection:Button({
-    Title = "Clear Log",
+ActionsSection:Button({
+    Title = "Clear All Logs",
     Callback = function()
         LoggedCalls = {}
         Stats.TotalCalls = 0
@@ -404,6 +361,8 @@ ExportSection:Button({
         Stats.StartMini = 0
         Stats.CatchFish = 0
         Stats.CancelFish = 0
+        LogOutputText = ""
+        CodeOutputText = ""
         
         Window:Notify({
             Title = "Cleared",
@@ -413,7 +372,76 @@ ExportSection:Button({
     end
 })
 
--- Update stats
+-- UI - Output Tab
+local LogSection = Output:Section({
+    Title = "Log Output (Delta Timing)"
+})
+
+LogSection:Paragraph({
+    Title = "Instructions",
+    Description = "Select all text below (click & drag), then copy (Ctrl+C or long press)"
+})
+
+local LogTextbox = LogSection:Input({
+    Title = "Log Output",
+    Description = "Select & copy this text",
+    Placeholder = "Generate output first...",
+    Value = "",
+    Multiline = true,
+    Callback = function(value)
+        -- Readonly, jadi ga perlu callback
+    end
+})
+
+LogSection:Button({
+    Title = "📋 Copy Log to Clipboard",
+    Callback = function()
+        pcall(function()
+            setclipboard(LogOutputText)
+            Window:Notify({
+                Title = "✅ Copied!",
+                Content = "Log copied to clipboard",
+                Duration = 2
+            })
+        end)
+    end
+})
+
+local CodeSection = Output:Section({
+    Title = "Lua Code Output"
+})
+
+CodeSection:Paragraph({
+    Title = "Instructions",
+    Description = "Select all code below (click & drag), then copy (Ctrl+C or long press)"
+})
+
+local CodeTextbox = CodeSection:Input({
+    Title = "Code Output",
+    Description = "Select & copy this code",
+    Placeholder = "Generate output first...",
+    Value = "",
+    Multiline = true,
+    Callback = function(value)
+        -- Readonly
+    end
+})
+
+CodeSection:Button({
+    Title = "📋 Copy Code to Clipboard",
+    Callback = function()
+        pcall(function()
+            setclipboard(CodeOutputText)
+            Window:Notify({
+                Title = "✅ Copied!",
+                Content = "Code copied to clipboard",
+                Duration = 2
+            })
+        end)
+    end
+})
+
+-- Update stats & outputs
 spawn(function()
     while true do
         TotalLabel:Set("Total Calls: " .. Stats.TotalCalls)
@@ -422,21 +450,34 @@ spawn(function()
         CatchLabel:Set("CatchFish: " .. Stats.CatchFish)
         CancelLabel:Set("CancelFish: " .. Stats.CancelFish)
         
-        task.wait(0.1)
+        -- Auto-update textboxes if there's new data
+        if #LoggedCalls > 0 and LogOutputText == "" then
+            LogOutputText = GenerateLogOutput()
+            CodeOutputText = GenerateCodeOutput()
+        end
+        
+        -- Update textbox values
+        if LogOutputText ~= "" then
+            LogTextbox:Set({Value = LogOutputText})
+        end
+        
+        if CodeOutputText ~= "" then
+            CodeTextbox:Set({Value = CodeOutputText})
+        end
+        
+        task.wait(0.5)
     end
 end)
 
 Window:Notify({
     Title = "Fish Logger Loaded!",
-    Content = "Record & copy with Delta timing",
+    Content = "Start logging & generate output!",
     Duration = 5
 })
 
-print("🎣 Fish Call Logger Loaded!")
-print("Delta Android supported - Click button to copy!")
-print("\nInstructions:")
+print("🎣 Fish Call Logger with UI Output!")
 print("1. Toggle 'Start Logging'")
-print("2. Fish manually (1-2 cycles)")
-print("3. Toggle off logging")
-print("4. Click '📋 Copy Log' or '📋 Copy Lua Code'")
-print("5. Paste anywhere (clipboard ready!)")
+print("2. Fish manually")
+print("3. Toggle off & click 'Generate Output'")
+print("4. Go to 'Output' tab")
+print("5. Select text & copy!")
